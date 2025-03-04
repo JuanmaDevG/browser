@@ -2,52 +2,65 @@
 
 #include <ostream>
 #include <string>
+#include <cstring>
 
 using namespace std;
 
-#define DELIMITER_BIT_VEC_SIZE 256 //TODO: modify to fit every case
+#define ISO_8859_SIZE 256
+#define DELIMITER_BIT_VEC_SIZE (ISO_8859_SIZE >> 3)               // Total of 256 bits (32 bytes to store ISO-8859 delimiter state machine)
+#define AMD64_REGISTER_VEC_SIZE (DELIMITER_BIN_VEC_SIZE >> 3)
+#define get_chunk(x) (this->delimitadoresPalabra[reinterpret_cast<uint8_t>(x) >> 3])
 
 
 class Tokenizador
 {
-    friend ostream& operator<<(ostream&, const Tokenizador&);
+  friend ostream& operator<<(ostream&, const Tokenizador&);
 
 public:
-    Tokenizador (const string& delimitadoresPalabra, const bool& kcasosEspeciales, const bool& minuscSinAcentos);	
+  Tokenizador (const string& delimitadoresPalabra, const bool kcasosEspeciales, const bool minuscSinAcentos);	
 
-    Tokenizador (const Tokenizador&);
+  Tokenizador (const Tokenizador&);
 
-    Tokenizador ();	
+  Tokenizador ();	
 
-    ~Tokenizador ();
+  ~Tokenizador ();
 
-    Tokenizador& operator=(const Tokenizador&);
+  Tokenizador& operator=(const Tokenizador&);
 
-    void Tokenizar (const string& str, list<string>& tokens) const;
+  void Tokenizar (const string& str, list<string>& tokens) const;
 
-    bool Tokenizar (const string& i, const string& f) const; 
+  bool Tokenizar (const string& i, const string& f) const; 
 
-    bool TokenizarListaFicheros (const string& i) const; 
+  bool TokenizarListaFicheros (const string& i) const; 
 
-    bool TokenizarDirectorio (const string& i) const; 
+  bool TokenizarDirectorio (const string& i) const; 
 
-    void DelimitadoresPalabra(const string& nuevoDelimiters); 
+  void DelimitadoresPalabra(const string& nuevoDelimiters); 
 
-    void AnyadirDelimitadoresPalabra(const string& nuevoDelimiters); // 
+  void AnyadirDelimitadoresPalabra(const string& nuevoDelimiters); // 
 
-    string DelimitadoresPalabra() const; 
+  string DelimitadoresPalabra() const; 
 
-    void CasosEspeciales (const bool& nuevoCasosEspeciales);
+  void CasosEspeciales (const bool& nuevoCasosEspeciales);
 
-    bool CasosEspeciales ();
+  bool CasosEspeciales () const;
 
-    void PasarAminuscSinAcentos (const bool& nuevoPasarAminuscSinAcentos);
+  void PasarAminuscSinAcentos (const bool& nuevoPasarAminuscSinAcentos);
 
-    bool PasarAminuscSinAcentos ();
+  bool PasarAminuscSinAcentos() const;
 
 private:
-    char[DELIMITER_BIT_VEC_SIZE] delimiters;
-    bool casosEspeciales;
+  uint8_t delimitadoresPalabra[DELIMITER_BIT_VEC_SIZE];
+  bool casosEspeciales;
+  bool pasarAminuscSinAcentos;
+
+  bool chekcDelimiter(char) const;
+  void setDelimiter(char, bool);
+  void resetDelimiters();
+  void copyDelimiters(const uint8_t*);
+  void copyDelimitersFromString(const string&);
+  
+  void constructionLogic();
 };
 
 class Tokenizador {
