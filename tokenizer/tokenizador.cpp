@@ -14,12 +14,13 @@ ostream& operator<<(ostream& os, const Tokenizador& tk)
     << flush;
 }
 
-Tokenizador::Tokenizador(const string& delimitadoresPalabra, const bool& casosEspeciales, const bool& minuscSinAcentos) :
+Tokenizador::Tokenizador(const string& delimitadoresPalabra, const bool casosEspeciales, const bool minuscSinAcentos) :
   casosEspeciales(casosEspeciales), pasarAminuscSinAcentos(minuscSinAcentos)
 {
   constructionLogic();
   copyDelimitersFromString(delimitadoresPalabra);
 }
+
 
 Tokenizador::Tokenizador(const Tokenizador& tk) : casosEspeciales(tk.casosEspeciales), pasarAminuscSinAcentos(tk.minuscSinAcentos)
 {
@@ -27,22 +28,25 @@ Tokenizador::Tokenizador(const Tokenizador& tk) : casosEspeciales(tk.casosEspeci
   copyDelimiters(tk.delimitadoresPalabra);
 }
 
+
 Tokenizador::Tokenizador() : casosEspeciales(true), pasarAminuscSinAcentos(false)
 {
   static const char* delimDefaults = ",;:.-/+*\\ '\"{}[]()<>¡!¿?&#=\t@";
   char const* i = delimDefaults;
   constructionLogic();
-  while(i != '\0')
+  while(*i != '\0')
   {
     setDelimiter(*i, true);
     ++i;
   }
 }	
 
+
 Tokenizador::~Tokenizador()
 {
   resetDelimiters();
 }
+
 
 Tokenizador::Tokenizador& operator=(const Tokenizador& tk)
 {
@@ -51,24 +55,34 @@ Tokenizador::Tokenizador& operator=(const Tokenizador& tk)
   copyDelimiters(tk.delimitadoresPalabra);
 }
 
+
 void Tokenizador::Tokenizar(const string& str, list<string>& tokens) const
 {
+  string buffer(str);
   tokens.clear();
+  if(pasarAminuscSinAcentos)
+    normalizeStream(buffer);
+
   auto scanner = str.cbegin();
-  //TODO: tokenizing a string as data buffer may be an entirely different function from memory mapping files
+  //TODO: remember to use string::assign to copy raw data inside a string buffer
+  //TODO: decide between tokNormalCases() and tokSpecialCases
 }
+
 
 bool Tokenizador::Tokenizar(const string& i, const string& f) const
 {
 } 
 
+
 bool Tokenizador::TokenizarListaFicheros(const string& i) const
 {
 } 
 
+
 bool Tokenizador::TokenizarDirectorio(const string& i) const
 {
 } 
+
 
 void Tokenizador::DelimitadoresPalabra(const string& nuevoDelimiters)
 {
@@ -76,10 +90,12 @@ void Tokenizador::DelimitadoresPalabra(const string& nuevoDelimiters)
   copyDelimitersFromString(nuevoDelimiters);
 } 
 
+
 void Tokenizador::AnyadirDelimitadoresPalabra(const string& nuevoDelimiters)
 {
   copyDelimitersFromString(nuevoDelimiters);
 }
+
 
 string Tokenizador::DelimitadoresPalabra() const
 {
@@ -94,38 +110,51 @@ string Tokenizador::DelimitadoresPalabra() const
   return result;
 } 
 
-void Tokenizador::CasosEspeciales(const bool& nuevoCasosEspeciales)
+
+void Tokenizador::CasosEspeciales(const bool nuevoCasosEspeciales)
 {
   casosEspeciales = nuevoCasosEspeciales;
 }
+
 
 void Tokenizador::CasosEspeciales() const
 {
   return casosEspeciales;
 }
 
-void Tokenizador::PasarAminuscSinAcentos(const bool& nuevoPasarAminuscSinAcentos)
+
+void Tokenizador::PasarAminuscSinAcentos(const bool nuevoPasarAminuscSinAcentos)
 {
   pasarAminuscSinAcentos = nuevoPasarAminuscSinAcentos;
 }
+
 
 bool Tokenizador::PasarAminuscSinAcentos() const
 {
   return pasarAminuscSinAcentos;
 }
 
+
+extern inline uint8_t& getDelimiterMemChunk(const char delim)
+{
+  return this->delimitadoresPalabra[reinterpret_cast<uint8_t>(x) >> 3];
+}
+
+
 extern inline bool Tokenizador::checkDelimiter(const char delim_idx) const
 {
-  return (get_chunk(delim_idx) >> (delim_idx & 0b111)) & 1;
+  return (getDelimiterMemChunk(delim_idx) >> (delim_idx & 0b111)) & 1;
 }
+
 
 extern inline void Tokenizador::setDelimiter(const char delim_idx, const bool val)
 {
   if(val)
-    get_chunk(delim_idx) = get_chunk(delim_idx) | (1 << (delim_idx & 0b111));
+    getDelimiterMemChunk(delim_idx) = getDelimiterMemChunk(delim_idx) | (1 << (reinterpret_cast<uint8_t>(delim_idx) & 0b111));
   else
-    get_chunk(delim_idx) = get_chunk(delim_idx) & (0xff - (1 << (delim_idx & 0b111)));
+    getDelimiterMemChunk(delim_idx) = getDelimiterMemChunk(delim_idx) & (0xff - (1 << (reinterpret_cast<uint8_t>(delim_idx) & 0b111)));
 }
+
 
 extern inline void Tokenizador::resetDelimiters()
 {
@@ -137,6 +166,7 @@ extern inline void Tokenizador::resetDelimiters()
     ++d;
   }
 }
+
 
 extern inline void Tokenizador::copyDelimiters(const uint8_t* delim)
 {
@@ -151,6 +181,7 @@ extern inline void Tokenizador::copyDelimiters(const uint8_t* delim)
   }
 }
 
+
 extern inline void copyDelimitersFromString(const string& delimitadoresPalabra)
 {
   for(auto reader = delimitadoresPalabra.cbegin(); reader != delimitadoresPalabra.cend(); reader++)
@@ -160,6 +191,23 @@ extern inline void copyDelimitersFromString(const string& delimitadoresPalabra)
 
 extern inline void Tokenizador::constructionLogic()
 {
+  resetDelimiters();
   if(casosEspeciales)
-    setDelimiter(' ', true);
+    setDelimiter(0x20 /*empty space*/, true);
+}
+
+
+void Tokenizador::normalizeStream(string& buffer)
+{
+  int16_t curChar;
+  for(auto i = buffer.begin(); i != buffer.end(); i++)
+  {
+    curChar = static_cast<int16_t>(*i);
+    if(curChar >= CAPITAL_START_POINT && curChar <= CAPITAL_END_POINT)
+      curChar += Tokenizador::TOLOWER_OFFSET;
+    else if(curChar - ACCENT_START_POINT >= 0)
+      curChar += Tokenizador::accentRemovalOffsetVec[curChar - ACCENT_START_POINT];
+    
+    *i = static_cast<char>(curChar);
+  }
 }

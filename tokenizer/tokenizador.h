@@ -9,8 +9,12 @@ using namespace std;
 #define ISO_8859_SIZE 256
 #define DELIMITER_BIT_VEC_SIZE (ISO_8859_SIZE >> 3)               // Total of 256 bits (32 bytes to store ISO-8859 delimiter state machine)
 #define AMD64_REGISTER_VEC_SIZE (DELIMITER_BIN_VEC_SIZE >> 3)
-#define get_chunk(x) (this->delimitadoresPalabra[reinterpret_cast<uint8_t>(x) >> 3])
 
+
+struct string_view {
+  char const* ptr;
+  uint32_t length;
+};
 
 class Tokenizador
 {
@@ -37,23 +41,52 @@ public:
 
   void DelimitadoresPalabra(const string& nuevoDelimiters); 
 
-  void AnyadirDelimitadoresPalabra(const string& nuevoDelimiters); // 
+  void AnyadirDelimitadoresPalabra(const string& nuevoDelimiters);
 
   string DelimitadoresPalabra() const; 
 
-  void CasosEspeciales (const bool& nuevoCasosEspeciales);
+  void CasosEspeciales (const bool nuevoCasosEspeciales);
 
   bool CasosEspeciales () const;
 
-  void PasarAminuscSinAcentos (const bool& nuevoPasarAminuscSinAcentos);
+  void PasarAminuscSinAcentos (const bool nuevoPasarAminuscSinAcentos);
 
   bool PasarAminuscSinAcentos() const;
 
 private:
+  static const int16_t CAPITAL_START_POINT = 0x41;
+  static const int16_t CAPITAL_END_POINT = 0x5a;                                // If curChar  is between CAPITAL_START_POINT and CAPITAL_END_POINT] -> char is capital
+  static const int16_t LOWERCASE_START_POINT = 0x61;
+  static const int16_t ACCENT_START_POINT = 0xc0;                               // If curChar - ACCENT_START_POINT < 0 -> char has no accent
+  static const int16_t ACCENT_REMOVAL_VEC_SIZE = ISO_8859_SIZE - ACCENT_START_POINT;
+  static const int16_t TOLOWER_OFFSET = 0x20;
+
+  static const int16_t accentRemovalOffsetVec[ACCENT_REMOVAL_VEC_SIZE] = {
+    -0x5f, -0x60, -0x61, -0x62, -0x63, -0x64,       // acctented A -> a
+    0x0, 0x0,                                       // weird AE, c trencada
+    -0x63, -0x64, -0x65, -0x66,                     // accented E -> e
+    -0x63, -0x64, -0x65, -0x66,                     // accented I -> i
+    0x0, 0x20,                                      // weird broken D, capital enye -> enye
+    -0x63, -0x64, -0x65, -0x66, -0x67,              // accented O -> o
+    0x0, 0x0,                                       // x symbol, crossed O
+    -0x64, -0x65, -0x66, -0x67,                     // accented U -> u
+    0x0, 0x0, 0x0                                   // accented Y, weird flag, beta
+    -0x7f, -0x80, -0x81, -0x82, -0x83, -0x84,       // accented a -> a
+    0x0, 0x0,                                       // weird ae, c trencada
+    -0x83, -0x84, -0x85, -0x86,                     // accented e -> e
+    -0x83, -0x84, -0x85, -0x86,                     // accented i -> i
+    0x0, 0x0,                                       // weird ro, enye
+    -0x83, -0x84, -0x85, -0x86, -0x87               // accented o -> o
+    0x0, 0x0,                                       // divide sign, broken o
+    -0x84, -0x85, -0x86, -0x87,                     // accented u -> u
+    0x0, 0x0, 0x0                                   // accented y, wtf, dieresy y
+  };
+
   uint8_t delimitadoresPalabra[DELIMITER_BIT_VEC_SIZE];
   bool casosEspeciales;
   bool pasarAminuscSinAcentos;
 
+  uint8_t& getDelimiterMemChunk(const char delim);
   bool chekcDelimiter(char) const;
   void setDelimiter(char, bool);
   void resetDelimiters();
@@ -61,70 +94,8 @@ private:
   void copyDelimitersFromString(const string&);
   
   void constructionLogic();
-};
 
-class Tokenizador {
-friend ostream& operator<<(ostream&, const Tokenizador&);	 
-// cout << "DELIMITADORES: " << delimiters << " TRATA CASOS ESPECIALES: " << casosEspeciales << " PASAR A MINUSCULAS Y SIN ACENTOS: " << pasarAminuscSinAcentos;
-// Aunque se modifique el almacenamiento de los delimitadores por temas de eficiencia, el campo delimiters se imprimirá con el string leído en el tokenizador (tras las modificaciones y eliminación de los caracteres repetidos correspondientes)
-
-public:
-    Tokenizador (const string& delimitadoresPalabra, const bool& kcasosEspeciales, const bool& minuscSinAcentos);	
-    // Inicializa delimiters a delimitadoresPalabra filtrando que no se introduzcan delimitadores repetidos (de izquierda a derecha, en cuyo caso se eliminarían los que hayan sido repetidos por la derecha); casosEspeciales a kcasosEspeciales; pasarAminuscSinAcentos a minuscSinAcentos
-
-    Tokenizador (const Tokenizador&);
-
-    Tokenizador ();	
-    // Inicializa delimiters=",;:.-/+*\\ '\"{}[]()<>¡!¿?&#=\t@"; casosEspeciales a true; pasarAminuscSinAcentos a false
-
-    ~Tokenizador ();	// Pone delimiters=""
-
-    Tokenizador& operator= (const Tokenizador&);
-
-    void Tokenizar (const string& str, list<string>& tokens) const;
-    // Tokeniza str devolviendo el resultado en tokens. La lista tokens se vaciará antes de almacenar el resultado de la tokenización. 
-
-    bool Tokenizar (const string& i, const string& f) const; 
-    // Tokeniza el fichero i guardando la salida en el fichero f (una palabra en cada línea del fichero). Devolverá true si se realiza la tokenización de forma correcta; false en caso contrario enviando a cerr el mensaje correspondiente (p.ej. que no exista el archivo i)
-
-    bool Tokenizar (const string & i) const;
-    // Tokeniza el fichero i guardando la salida en un fichero de nombre i añadiéndole extensión .tk (sin eliminar previamente la extensión de i por ejemplo, del archivo pp.txt se generaría el resultado en pp.txt.tk), y que contendrá una palabra en cada línea del fichero. Devolverá true si se realiza la tokenización de forma correcta; false en caso contrario enviando a cerr el mensaje correspondiente (p.ej. que no exista el archivo i)
-
-    bool TokenizarListaFicheros (const string& i) const; 
-    // Tokeniza el fichero i que contiene un nombre de fichero por línea guardando la salida en ficheros (uno por cada línea de i) cuyo nombre será el leído en i añadiéndole extensión .tk, y que contendrá una palabra en cada línea del fichero leído en i. Devolverá true si se realiza la tokenización de forma correcta de todos los archivos que contiene i; devolverá false en caso contrario enviando a cerr el mensaje correspondiente (p.ej. que no exista el archivo i, o que se trate de un directorio, enviando a "cerr" los archivos de i que no existan o que sean directorios; luego no se ha de interrumpir la ejecución si hay algún archivo en i que no exista)
-
-    bool TokenizarDirectorio (const string& i) const; 
-    // Tokeniza todos los archivos que contenga el directorio i, incluyendo los de los subdirectorios, guardando la salida en ficheros cuyo nombre será el de entrada añadiéndole extensión .tk, y que contendrá una palabra en cada línea del fichero. Devolverá true si se realiza la tokenización de forma correcta de todos los archivos; devolverá false en caso contrario enviando a cerr el mensaje correspondiente (p.ej. que no exista el directorio i, o los ficheros que no se hayan podido tokenizar)
-
-    void DelimitadoresPalabra(const string& nuevoDelimiters); 
-    // Inicializa delimiters a nuevoDelimiters, filtrando que no se introduzcan delimitadores repetidos (de izquierda a derecha, en cuyo caso se eliminarían los que hayan sido repetidos por la derecha)
-
-    void AnyadirDelimitadoresPalabra(const string& nuevoDelimiters); // 
-    // Añade al final de "delimiters" los nuevos delimitadores que aparezcan en "nuevoDelimiters" (no se almacenarán caracteres repetidos)
-
-    string DelimitadoresPalabra() const; 
-    // Devuelve "delimiters" 
-
-    void CasosEspeciales (const bool& nuevoCasosEspeciales);
-    // Cambia la variable privada "casosEspeciales" 
-
-    bool CasosEspeciales ();
-    // Devuelve el contenido de la variable privada "casosEspeciales" 
-
-    void PasarAminuscSinAcentos (const bool& nuevoPasarAminuscSinAcentos);
-    // Cambia la variable privada "pasarAminuscSinAcentos". Atención al formato de codificación del corpus (comando "file" de Linux). Para la corrección de la práctica se utilizará el formato actual (ISO-8859). 
-
-    bool PasarAminuscSinAcentos ();
-    // Devuelve el contenido de la variable privada "pasarAminuscSinAcentos"
-
-
-
-private:
-    string delimiters;		// Delimitadores de términos. Aunque se modifique la forma de almacenamiento interna para mejorar la eficiencia, este campo debe permanecer para indicar el orden en que se introdujeron los delimitadores
-
-    bool casosEspeciales;
-    // Si true detectará palabras compuestas y casos especiales. Sino, trabajará al igual que el algoritmo propuesto en la sección "Versión del tokenizador vista en clase"
-
-    bool pasarAminuscSinAcentos;
-    // Si true pasará el token a minúsculas y quitará acentos, antes de realizar la tokenización
+  void normalizeStream(void* data, const size_t sz);
+  string_view tokNormalCase(string&);  //TODO
+  string_view tokSpecialCase(string&); //TODO
 };
