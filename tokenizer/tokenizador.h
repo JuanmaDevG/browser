@@ -18,6 +18,7 @@ struct file_reader {
   char* frontpoint;
   const char* rdbuf;
   size_t rdbuf_size;
+  char* outbuf;       //TODO: probably memory mapped file to write output if set
 
   //TODO: look for return values as errors
   file_reader();

@@ -1,10 +1,10 @@
 #include <tokenizador.h>
 
 
-file_reader::file_reader() : end(start + FILE_READER_BUF_SIZE), backpoint(start), frontpoint(start), rdbuf(nullptr), rdbuf_size(0) {}
+file_reader::file_reader() : end(start + FILE_READER_BUF_SIZE), backpoint(start), frontpoint(start), rdbuf(nullptr), rdbuf_size(0), outbuf(nullptr) {}
 
 
-void file_reader::begin(const char* filename)
+void file_reader::begin(const char* filename, const char* output_filename)
 {
 }
 
@@ -14,7 +14,7 @@ void file_reader::end()
 }
 
 
-void file_reader::begin(const void* stream, const size_t size)
+void file_reader::begin(const void* stream, const size_t size, char *const output_stream)
 {
 }
 
@@ -25,6 +25,7 @@ void file_reader::end_stream()
   rdbuf_size = 0;
   backpoint = start;
   frontpoint = start;
+  output_stream = nullptr;
 }
 
 
