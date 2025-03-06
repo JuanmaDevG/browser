@@ -1,20 +1,35 @@
 #pragma once
 
-#include <ostream>
+#include <iostream>
 #include <string>
-#include <cstring>
 
 using namespace std;
 
 #define ISO_8859_SIZE 256
 #define DELIMITER_BIT_VEC_SIZE (ISO_8859_SIZE >> 3)               // Total of 256 bits (32 bytes to store ISO-8859 delimiter state machine)
 #define AMD64_REGISTER_VEC_SIZE (DELIMITER_BIN_VEC_SIZE >> 3)
+#define FILE_READER_BUF_SIZE 4098
 
 
-struct string_view {
-  char const* ptr;
-  uint32_t length;
+struct file_reader {
+  char start[FILE_READER_BUF_SIZE];
+  const char *const end;
+  char* backpoint;
+  char* frontpoint;
+  const char* rdbuf;
+  size_t rdbuf_size;
+
+  //TODO: look for return values as errors
+  file_reader();
+  void begin(const char* filename);     //TODO: maps the whole file into memory and closes the file descriptor, then copies FILE_READER_BUF_SIZE bytes (using int64_t)
+  void end();                           //TODO: unmaps the mapped region (does not zero the buffers)
+  void begin(const void* stream, const size_t size);
+  void end_stream();
+  void displace();                      //TODO: displaces the reader by backwriting the data (backpoint to frontpoint) at start and copying more bytes in (frontpoint +1)
+  void reload();                        //TODO: fully reloads the buffer placing backpoint and frontpoint at start
+  //TODO: may make operator= for Tokenizador::operator=
 };
+
 
 class Tokenizador
 {
@@ -85,6 +100,7 @@ private:
   uint8_t delimitadoresPalabra[DELIMITER_BIT_VEC_SIZE];
   bool casosEspeciales;
   bool pasarAminuscSinAcentos;
+  file_reader reader;
 
   uint8_t& getDelimiterMemChunk(const char delim);
   bool chekcDelimiter(char) const;

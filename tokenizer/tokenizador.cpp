@@ -1,6 +1,42 @@
 #include <tokenizador.h>
 
-//TODO: cleanup header file
+
+file_reader::file_reader() : end(start + FILE_READER_BUF_SIZE), backpoint(start), frontpoint(start), rdbuf(nullptr), rdbuf_size(0) {}
+
+
+void file_reader::begin(const char* filename)
+{
+}
+
+
+void file_reader::end()
+{
+}
+
+
+void file_reader::begin(const void* stream, const size_t size)
+{
+}
+
+
+void file_reader::end_stream()
+{
+  rdbuf = nullptr;
+  rdbuf_size = 0;
+  backpoint = start;
+  frontpoint = start;
+}
+
+
+void file_reader::displace()
+{
+}
+
+
+void file_reader::reload()
+{
+}
+
 
 ostream& operator<<(ostream& os, const Tokenizador& tk)
 {
@@ -14,22 +50,23 @@ ostream& operator<<(ostream& os, const Tokenizador& tk)
     << flush;
 }
 
+
 Tokenizador::Tokenizador(const string& delimitadoresPalabra, const bool casosEspeciales, const bool minuscSinAcentos) :
-  casosEspeciales(casosEspeciales), pasarAminuscSinAcentos(minuscSinAcentos)
+  casosEspeciales(casosEspeciales), pasarAminuscSinAcentos(minuscSinAcentos), file_reader()
 {
   constructionLogic();
   copyDelimitersFromString(delimitadoresPalabra);
 }
 
 
-Tokenizador::Tokenizador(const Tokenizador& tk) : casosEspeciales(tk.casosEspeciales), pasarAminuscSinAcentos(tk.minuscSinAcentos)
+Tokenizador::Tokenizador(const Tokenizador& tk) : casosEspeciales(tk.casosEspeciales), pasarAminuscSinAcentos(tk.minuscSinAcentos), file_reader()
 {
   constructionLogic();
   copyDelimiters(tk.delimitadoresPalabra);
 }
 
 
-Tokenizador::Tokenizador() : casosEspeciales(true), pasarAminuscSinAcentos(false)
+Tokenizador::Tokenizador() : casosEspeciales(true), pasarAminuscSinAcentos(false), file_reader()
 {
   static const char* delimDefaults = ",;:.-/+*\\ '\"{}[]()<>¡!¿?&#=\t@";
   char const* i = delimDefaults;
@@ -58,6 +95,7 @@ Tokenizador::Tokenizador& operator=(const Tokenizador& tk)
 
 void Tokenizador::Tokenizar(const string& str, list<string>& tokens) const
 {
+  //TODO: substitute string as buffer to uint64_t chunk that can cycleReload
   string buffer(str);
   tokens.clear();
   if(pasarAminuscSinAcentos)
@@ -71,6 +109,7 @@ void Tokenizador::Tokenizar(const string& str, list<string>& tokens) const
 
 bool Tokenizador::Tokenizar(const string& i, const string& f) const
 {
+  //TODO: open file -> mmap -> copy to buffer -> normalize -> tokenize -> if not enough info then do partial load
 } 
 
 
@@ -197,6 +236,7 @@ extern inline void Tokenizador::constructionLogic()
 }
 
 
+//TODO: probably delete this function in favour of file_reader functions
 void Tokenizador::normalizeStream(string& buffer)
 {
   int16_t curChar;
