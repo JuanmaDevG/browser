@@ -1,41 +1,42 @@
 #include <tokenizador.h>
 
 
-file_reader::file_reader() : end(start + FILE_READER_BUF_SIZE), backpoint(start), frontpoint(start), rdbuf(nullptr), rdbuf_size(0), outbuf(nullptr) {}
+file_loader::file_loader() : end(start + FILE_READER_BUF_SIZE), backpoint(start), frontpoint(start), inbuf(nullptr), inbuf_end(nullptr), inbuf_checkpoint(nullptr),
+  inbuf_filename(nullptr), outbuf(nullptr), outbuf_checkpoint(nullptr), outbuf_filename(nullptr) {}
 
 
-void file_reader::begin(const char* filename, const char* output_filename)
+void file_loader::begin(const char* filename, const char* output_filename = nullptr)
 {
 }
 
 
-void file_reader::end()
+void file_loader::begin(const void* stream, const size_t size, char *const outstream = nullptr, const size_t outstream_size = 0)
 {
 }
 
 
-void file_reader::begin(const void* stream, const size_t size, char *const output_stream)
+void file_loader::terminate()
 {
 }
 
 
-void file_reader::end_stream()
-{
-  rdbuf = nullptr;
-  rdbuf_size = 0;
-  backpoint = start;
-  frontpoint = start;
-  output_stream = nullptr;
-}
-
-
-void file_reader::displace()
+void file_loader::reload()
 {
 }
 
 
-void file_reader::reload()
+void file_loader::full_reload()
 {
+}
+
+
+file_loader& file_loader::operator=(const file_loader& fr)
+{
+  end();
+  //1. copy data
+  //2. backpoint and frontpoint
+  //3. inbuf as ptr or mmap
+  //4. outbuf as ptr or mmap
 }
 
 
@@ -53,21 +54,21 @@ ostream& operator<<(ostream& os, const Tokenizador& tk)
 
 
 Tokenizador::Tokenizador(const string& delimitadoresPalabra, const bool casosEspeciales, const bool minuscSinAcentos) :
-  casosEspeciales(casosEspeciales), pasarAminuscSinAcentos(minuscSinAcentos), file_reader()
+  casosEspeciales(casosEspeciales), pasarAminuscSinAcentos(minuscSinAcentos), file_loader()
 {
   constructionLogic();
   copyDelimitersFromString(delimitadoresPalabra);
 }
 
 
-Tokenizador::Tokenizador(const Tokenizador& tk) : casosEspeciales(tk.casosEspeciales), pasarAminuscSinAcentos(tk.minuscSinAcentos), file_reader()
+Tokenizador::Tokenizador(const Tokenizador& tk) : casosEspeciales(tk.casosEspeciales), pasarAminuscSinAcentos(tk.minuscSinAcentos), file_loader()
 {
   constructionLogic();
   copyDelimiters(tk.delimitadoresPalabra);
 }
 
 
-Tokenizador::Tokenizador() : casosEspeciales(true), pasarAminuscSinAcentos(false), file_reader()
+Tokenizador::Tokenizador() : casosEspeciales(true), pasarAminuscSinAcentos(false), file_loader()
 {
   static const char* delimDefaults = ",;:.-/+*\\ '\"{}[]()<>¡!¿?&#=\t@";
   char const* i = delimDefaults;
@@ -91,6 +92,7 @@ Tokenizador::Tokenizador& operator=(const Tokenizador& tk)
   casosEspeciales = tk.casosEspeciales;
   pasarAminuscSinAcentos = tk.pasarAminuscSinAcentos;
   copyDelimiters(tk.delimitadoresPalabra);
+  loader = tk.loader;
 }
 
 
@@ -237,7 +239,7 @@ extern inline void Tokenizador::constructionLogic()
 }
 
 
-//TODO: probably delete this function in favour of file_reader functions
+//TODO: probably delete this function in favour of file_loader functions
 void Tokenizador::normalizeStream(string& buffer)
 {
   int16_t curChar;
