@@ -8,30 +8,23 @@ using namespace std;
 #define ISO_8859_SIZE 256
 #define DELIMITER_BIT_VEC_SIZE (ISO_8859_SIZE >> 3)               // Total of 256 bits (32 bytes to store ISO-8859 delimiter state machine)
 #define AMD64_REGISTER_VEC_SIZE (DELIMITER_BIN_VEC_SIZE >> 3)
-#define INTERNAL_FILE_LOADER_BUFSIZE 2048
+#define TMP_DATA_SIZE 2048
 
 
 struct file_loader {
   const char* inbuf;
   const char* inbuf_end;
-  const char* backpoint;
-  const char* frontpoint;
-  const char* inbuf_filename;
+  const char* readpoint;
   char* outbuf;
   const char* outbuf_end;
-  char* outbuf_writepoint;
+  char* writepoint;
   const char* outbuf_filename;
-  char outbuf_nofile[INTERNAL_FILE_LOADER_BUFSIZE];
-  bool is_buffered;
 
-  bool begin(const char* filename, const char* out_filename);
-  void begin_buffered(const char* inbuf, const size_t inbuf_size);
+  bool begin(const char* in_filename, const char* out_filename);
   void terminate();
-  void write(const char chunk_end);
   void null_readpoints();
   void null_writepoints();
   void grow_outfile(size_t how_much);
-  void shrink_outfile(size_t how_much);
 
   file_loader& operator=(const file_loader&);
 };
@@ -107,6 +100,8 @@ private:
   bool casosEspeciales;
   bool pasarAminuscSinAcentos;
   file_loader loader;
+  char tmpData[TMP_DATA_SIZE];
+  const char *const tmpDataEnd = tmpData + TMP_DATA_SIZE;
 
   uint8_t& getDelimiterMemChunk(const char delim);
   bool chekcDelimiter(char) const;
@@ -114,10 +109,9 @@ private:
   void resetDelimiters();
   void copyDelimiters(const uint8_t*);
   void copyDelimitersFromString(const string&);
+  const void* tmpWrite(const void *const chunk, const size_t size);
+  void tmpRead(void* where, const size_t size); //TODO
+  char normalizeChar(char);
   
   void constructionLogic();
-
-  char normalizeChar(char);
-  string_view tokNormalCase(string&);  //TODO
-  string_view tokSpecialCase(string&); //TODO
 };

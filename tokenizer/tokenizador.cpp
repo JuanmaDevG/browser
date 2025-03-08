@@ -14,7 +14,7 @@ bool file_loader::begin(const char* filename, const char* output_filename = null
     return false;
 
   fstat(fd, &in_fileinfo);
-  inbuf = (char*)mmap(nullptr, in_fileinfo.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
+  inbuf = (char*)mmap(nullptr, in_fileinfo.st_size, PROT_READ, MAP_SHARED, fd, 0);
   close(fd);
   inbuf_end = inbuf + in_fileinfo.st_size;
   backpoint = inbuf;
@@ -26,90 +26,35 @@ bool file_loader::begin(const char* filename, const char* output_filename = null
   if(fd < 0)
   {
     munmap(inbuf, in_fileinfo.st_size);
-    inbuf = nullptr;
-    inbuf_end = nullptr;
-    backpoint = nullptr;
-    frontpoint = nullptr;
-    inbuf_filename = nullptr;
+    null_readpoints();
     return false;
   }
-  ftruncate(fd, in_fileinfo.st_size); // As minimum, the input file size is enough
+  ftruncate(fd, in_fileinfo.st_size);
   outbuf = (char*)mmap(nullptr, in_fileinfo.st_size, PROT_WRITE, MAP_SHARED, fd, 0);
   close(fd);
   outbuf_end = outbuf + in_fileinfo.st_size;
   outbuf_writepoint = outbuf;
   outbuf_filename = output_filename;
 
-  this->is_buffered = false;
   return true;
 }
 
 
-void file_loader::begin(const char* inbuf, const size_t inbuf_size)
-{
-  this->is_buffered = true;
-  this->inbuf = inbuf;
-  inbuf_end = this->inbuf + inbuf_size;
-  backpoint = this->inbuf;
-  frontpoint = this->inbuf;
-  inbuf_filename = nullptr;
-  outbuf = nullptr;
-  outbuf_end = outbuf_nofile + INTERNAL_FILE_LOADER_BUFSIZE;
-  outbuf_writeponint = outbuf_nofile;
-}
-
-
-//TODO: ensure to put null char finally (if not buffered, or decide later)
 void file_loader::terminate()
 {
-  if(!is_buffered) {
-    munmap(inbuf, static_cast<size_t>(inbuf_end - inbuf));
+  munmap(inbuf, static_cast<size_t>(inbuf_end - inbuf));
 
-    if(outbuf) {
-      munmap(outbuf, static_cast<size_t>(outbuf_end - outbuf));
-      if(outbuf_end - outbuf_writepoint)  // Adjusting the filesize to the bytes written
-      {
-        int fd = open(output_filename, O_WRONLY);
-        ftruncate(fd, (outbuf_end - outbuf) - (outbuf_end - outbuf_writepoint));
-      }
+  if(outbuf) {
+    munmap(outbuf, static_cast<size_t>(outbuf_end - outbuf));
+    if(outbuf_end - outbuf_writepoint)  // Adjusting the filesize to the bytes written
+    {
+      int fd = open(output_filename, O_WRONLY);
+      ftruncate(fd, (outbuf_end - outbuf) - (outbuf_end - outbuf_writepoint));
     }
   }
-  else if(outbuf) delete[] outbuf;
 
   null_readpoints();
   null_writepoints();
-}
-
-
-void file_loader::write(const char chunk_end = 0)
-{
-  //TODO: manage if is buffered
-  if(frontpoint - backpoint +1 > outbuf_end - outbuf_writepoint)
-    grow_outfile(256);
-
-  const int64_t* big_readpoint = reinterpret_cast<const int64_t*>(backpoint);
-  int64_t* big_writepoint = reinterpret_cast<int64_t*>(outbuf_writepoint);
-  backpoint += (frontpoint - backpoint) - ((frontpoint - backpoint) & 0b111); // Backpoint placed at remaining bytes
-  
-  while(big_readpoint < backpoint)
-  {
-    *big_writepoint = *big_readpoint;
-    ++big_readpoint;
-    ++big_writepoint;
-  }
-  outbuf_writepoint = reinterpret_cast<char*>(big_writepoint);
-
-  while(backpoint < frontpoint)
-  {
-    *outbuf_writepoint = backpoint;
-    ++outbuf_writepoint;
-    ++backpoint;
-  }
-  if(chunk_end)
-  {
-    *outbuf_writepoint = chunk_end;
-    ++outbuf_writepoint;
-  }
 }
 
 
@@ -117,9 +62,7 @@ extern inline void file_loader::null_readpoints()
 {
   inbuf = nullptr;
   inbuf_end = nullptr;
-  backpoint = nullptr;
-  frontpoint = nullptr;
-  inbuf_filename = nullptr;
+  readpoint = nullptr;
 }
 
 
@@ -127,7 +70,7 @@ extern inline void file_reader::null_writepoints()
 {
   outbuf = nullptr;
   outbuf_end = nullptr;
-  outbuf_writepoint = nullptr;
+  writepoint = nullptr;
   outbuf_filename = nullptr;
 }
 
@@ -222,15 +165,24 @@ Tokenizador::Tokenizador& operator=(const Tokenizador& tk)
 
 void Tokenizador::Tokenizar(const string& str, list<string>& tokens) const
 {
-  //TODO: substitute string as buffer to uint64_t chunk that can cycleReload
+  //TODO: token pipeline: extract -> normalize -> state machine -> put (+endl ? reset state machine)
+
+  //TODO: substitute string buffer
   string buffer(str);
   tokens.clear();
+  const char *strbegin = str.c_str(), const char *const strend = strbegin + str.length();
+  while(strbegin < strend)
+  {
+    // ALL THIS inside a superloop because of cyclic reads
+    // 1. Copy data
+    // 2. Normalize data
+    // 3. State machine
+    // 4. Push back string into list
+  }
+
+  //TODO: solve this shit
   if(pasarAminuscSinAcentos)
     normalizeStream(buffer);
-
-  auto scanner = str.cbegin();
-  //TODO: remember to use string::assign to copy raw data inside a string buffer
-  //TODO: decide between tokNormalCases() and tokSpecialCases
 }
 
 
@@ -372,4 +324,29 @@ extern inline char Tokenizador::normalizeChar(const char c)
     curChar += Tokenizador::accentRemovalOffsetVec[curChar - ACCENT_START_POINT];
 
   return static_cast<char>(curChar);
+}
+
+
+const void* Tokenizador::tmpStore(const void* const chunk, const size_t size)
+{
+  const char* chunk_end = static_cast<const char*>(chunk) + size;
+  const int64_t* readpoint = static_cast<const int64_t*>(chunk);
+  int64_t* writepoint = reinterpret_cast<int64_t*>(tmpData);
+  const char* remain_readpoint = chunk_end - (chunk_end & 0b111);
+  char* remain_writepoint = tmpDataEnd - (tmpDataEnd & 0b111);
+
+  while(writepoint < reinterpret_cast<int64_t*>(remain_writepoint) && readpoint < reinterpret_cast<int64_t*>(remain_readpoint))
+  {
+    *writepoint = *readpoint;
+    ++writepoint;
+    ++readpoint;
+  }
+
+  while(remain_writepoint < tmpDataEnd && remain_readpoint < chunk_end)
+  {
+    *remain_writepoint = *remain_readpoint;
+    ++remain_writepoint;
+    ++remain_readpoint;
+  }
+  return (size > (tmpDataEnd - tmpData) ? reinterpret_cast<void*>(remain_readpoint) : nullptr);
 }
