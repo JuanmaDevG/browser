@@ -1,38 +1,113 @@
 #include <tokenizador.h>
 
+#include <sys/mman.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
-file_loader::file_loader() : end(start + FILE_READER_BUF_SIZE), backpoint(start), frontpoint(start), inbuf(nullptr), inbuf_end(nullptr), inbuf_checkpoint(nullptr),
-  inbuf_filename(nullptr), outbuf(nullptr), outbuf_checkpoint(nullptr), outbuf_filename(nullptr) {}
 
-
-void file_loader::begin(const char* filename, const char* output_filename = nullptr)
+bool file_loader::begin(const char* filename, const char* output_filename = nullptr)
 {
-}
+  int fd = open(filename, O_RDONLY);
+  struct stat in_fileinfo;
+  if(fd < 0)
+    return false;
 
+  fstat(fd, &in_fileinfo);
+  inbuf = (char*)mmap(nullptr, in_fileinfo.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
+  close(fd);
+  inbuf_end = inbuf + in_fileinfo.st_size;
+  backpoint = inbuf;
+  frontpoint = inbuf;
+  inbuf_filename = filename;
 
-void file_loader::begin(const void* stream, const size_t size, char *const outstream = nullptr, const size_t outstream_size = 0)
-{
+  if(!output_filename) return true;
+  fd = open(output_filename, O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR);
+  if(fd < 0)
+  {
+    munmap(inbuf, in_fileinfo.st_size);
+    inbuf = nullptr;
+    inbuf_end = nullptr;
+    backpoint = nullptr;
+    frontpoint = nullptr;
+    inbuf_filename = nullptr;
+    return false;
+  }
+  ftruncate(fd, in_fileinfo.st_size); // As minimum, the input file size is enough
+  outbuf = (char*)mmap(nullptr, in_fileinfo.st_size, PROT_WRITE, MAP_SHARED, fd, 0);
+  close(fd);
+  outbuf_end = outbuf + in_fileinfo.st_size;
+  outbuf_writepoint = outbuf;
+  outbuf_filename = output_filename;
+
+  return true;
 }
 
 
 void file_loader::terminate()
 {
+  munmap(inbuf, static_cast<size_t>(inbuf_end - inbuf));
+  inbuf = nullptr;
+  inbuf_end = nullptr;
+  backpoint = nullptr;
+  frontpoint = nullptr;
+  inbuf_filename = nullptr;
+
+  if(outbuf) {
+    munmap(outbuf, static_cast<size_t>(outbuf_end - outbuf));
+    if(outbuf_end - outbuf_writepoint)  // Adjusting the filesize to the bytes written
+    {
+      int fd = open(output_filename, O_WRONLY);
+      ftruncate(fd, (outbuf_end - outbuf) - (outbuf_end - outbuf_writepoint));
+    }
+
+    outbuf = nullptr;
+    outbuf_end = nullptr;
+    outbuf_writepoint = nullptr;
+    outbuf_filename = nullptr;
+  }
 }
 
 
-void file_loader::reload()
+void file_loader::write(const char chunk_end)
 {
-}
+  if(frontpoint - backpoint +1 > outbuf_end - outbuf_writepoint)
+  {
+    off_t writer_offset = outbuf_writepoint - outbuf;
+    size_t filesize = static_cast(outbuf_end - outbuf);
+    munmap(outbuf, filesize);
+    filesize += 256;
 
+    int fd = open(outbuf_filename, O_WRONLY);
+    ftruncate(fd, filesize);
+    outbuf = mmap(nullptr, filesize, PROT_WRITE, MAP_SHARED, fd, 0);
+    outbuf_end = outbuf + filesize;
+    outbuf_writepoint = outbuf + writer_offset;
+  }
+  const int64_t* big_readpoint = reinterpret_cast<const int64_t*>(backpoint);
+  int64_t* big_writepoint = reinterpret_cast<int64_t*>(outbuf_writepoint);
+  backpoint += (frontpoint - backpoint) - ((frontpoint - backpoint) & 0b111); // Backpoint placed at remaining bytes
+  
+  while(big_readpoint < backpoint)
+  {
+    *big_writepoint = *big_readpoint;
+    ++big_readpoint;
+    ++big_writepoint;
+  }
+  outbuf_writepoint = reinterpret_cast<char*>(big_writepoint);
 
-void file_loader::full_reload()
-{
+  if(backpoint < frontpoint)
+  {
+    //TODO: write remaining bytes [backpoint -> frontpoint] using outbuf_writepoint
+  }
+  *outbuf_writepoint = chunk_end;
+  ++outbuf_writepoint;
 }
 
 
 file_loader& file_loader::operator=(const file_loader& fr)
 {
-  end();
+  terminate();
   //1. copy data
   //2. backpoint and frontpoint
   //3. inbuf as ptr or mmap
@@ -54,8 +129,9 @@ ostream& operator<<(ostream& os, const Tokenizador& tk)
 
 
 Tokenizador::Tokenizador(const string& delimitadoresPalabra, const bool casosEspeciales, const bool minuscSinAcentos) :
-  casosEspeciales(casosEspeciales), pasarAminuscSinAcentos(minuscSinAcentos), file_loader()
+  casosEspeciales(casosEspeciales), pasarAminuscSinAcentos(minuscSinAcentos)
 {
+  file_loader = {nullptr};
   constructionLogic();
   copyDelimitersFromString(delimitadoresPalabra);
 }

@@ -8,34 +8,24 @@ using namespace std;
 #define ISO_8859_SIZE 256
 #define DELIMITER_BIT_VEC_SIZE (ISO_8859_SIZE >> 3)               // Total of 256 bits (32 bytes to store ISO-8859 delimiter state machine)
 #define AMD64_REGISTER_VEC_SIZE (DELIMITER_BIN_VEC_SIZE >> 3)
-#define FILE_LOADER_BUF_SIZE 2048
 
 
-//TODO: in the future, make 64byte chunk reads, for the moment, byte by byte
 struct file_loader {
-  char start[FILE_LOADER_BUF_SIZE];
-  const char* end;
-  char* backpoint;
-  char* frontpoint;
   const char* inbuf;
   const char* inbuf_end;
-  const char* inbuf_checkpoint;
+  char* backpoint;
+  char* frontpoint;
   const char* inbuf_filename;
   char* outbuf;
   const char* outbuf_end;
-  char* outbuf_checkpoint;
+  char* outbuf_writepoint;
   const char* outbuf_filename;
 
-  file_loader();
   bool begin(const char* filename, const char* out_filename);
-  void begin(const void* stream, const size_t size);
-  void terminate();                     //TODO: unmaps the mapped region (does not zero the buffers) unmaps or nulls the outbuf
-  void reload();                        //TODO: displaces the reader by backwriting the data (backpoint to end), moving backpoint and frontpoint
-  void full_reload();                   //TODO: fully reloads the buffer placing backpoint and frontpoint at start
-  //TODO: displace and reload write remaining data in outbuf, if available
+  void terminate();
+  void write(const char chunk_end);
 
   file_loader& operator=(const file_loader&);
-  //TODO: may make operator= for Tokenizador::operator=
 };
 
 
