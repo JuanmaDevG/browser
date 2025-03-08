@@ -9,7 +9,7 @@
 bool file_loader::begin(const char* filename, const char* output_filename = nullptr)
 {
   int fd = open(filename, O_RDONLY);
-  struct stat in_fileinfo;
+  stat in_fileinfo;
   if(fd < 0)
     return false;
 
@@ -40,50 +40,53 @@ bool file_loader::begin(const char* filename, const char* output_filename = null
   outbuf_writepoint = outbuf;
   outbuf_filename = output_filename;
 
+  this->is_buffered = false;
   return true;
 }
 
 
-void file_loader::terminate()
+void file_loader::begin(const char* inbuf, const size_t inbuf_size)
 {
-  munmap(inbuf, static_cast<size_t>(inbuf_end - inbuf));
-  inbuf = nullptr;
-  inbuf_end = nullptr;
-  backpoint = nullptr;
-  frontpoint = nullptr;
+  this->is_buffered = true;
+  this->inbuf = inbuf;
+  inbuf_end = this->inbuf + inbuf_size;
+  backpoint = this->inbuf;
+  frontpoint = this->inbuf;
   inbuf_filename = nullptr;
-
-  if(outbuf) {
-    munmap(outbuf, static_cast<size_t>(outbuf_end - outbuf));
-    if(outbuf_end - outbuf_writepoint)  // Adjusting the filesize to the bytes written
-    {
-      int fd = open(output_filename, O_WRONLY);
-      ftruncate(fd, (outbuf_end - outbuf) - (outbuf_end - outbuf_writepoint));
-    }
-
-    outbuf = nullptr;
-    outbuf_end = nullptr;
-    outbuf_writepoint = nullptr;
-    outbuf_filename = nullptr;
-  }
+  outbuf = nullptr;
+  outbuf_end = outbuf_nofile + INTERNAL_FILE_LOADER_BUFSIZE;
+  outbuf_writeponint = outbuf_nofile;
 }
 
 
-void file_loader::write(const char chunk_end)
+//TODO: ensure to put null char finally (if not buffered, or decide later)
+void file_loader::terminate()
 {
-  if(frontpoint - backpoint +1 > outbuf_end - outbuf_writepoint)
-  {
-    off_t writer_offset = outbuf_writepoint - outbuf;
-    size_t filesize = static_cast(outbuf_end - outbuf);
-    munmap(outbuf, filesize);
-    filesize += 256;
+  if(!is_buffered) {
+    munmap(inbuf, static_cast<size_t>(inbuf_end - inbuf));
 
-    int fd = open(outbuf_filename, O_WRONLY);
-    ftruncate(fd, filesize);
-    outbuf = mmap(nullptr, filesize, PROT_WRITE, MAP_SHARED, fd, 0);
-    outbuf_end = outbuf + filesize;
-    outbuf_writepoint = outbuf + writer_offset;
+    if(outbuf) {
+      munmap(outbuf, static_cast<size_t>(outbuf_end - outbuf));
+      if(outbuf_end - outbuf_writepoint)  // Adjusting the filesize to the bytes written
+      {
+        int fd = open(output_filename, O_WRONLY);
+        ftruncate(fd, (outbuf_end - outbuf) - (outbuf_end - outbuf_writepoint));
+      }
+    }
   }
+  else if(outbuf) delete[] outbuf;
+
+  null_readpoints();
+  null_writepoints();
+}
+
+
+void file_loader::write(const char chunk_end = 0)
+{
+  //TODO: manage if is buffered
+  if(frontpoint - backpoint +1 > outbuf_end - outbuf_writepoint)
+    grow_outfile(256);
+
   const int64_t* big_readpoint = reinterpret_cast<const int64_t*>(backpoint);
   int64_t* big_writepoint = reinterpret_cast<int64_t*>(outbuf_writepoint);
   backpoint += (frontpoint - backpoint) - ((frontpoint - backpoint) & 0b111); // Backpoint placed at remaining bytes
@@ -96,17 +99,62 @@ void file_loader::write(const char chunk_end)
   }
   outbuf_writepoint = reinterpret_cast<char*>(big_writepoint);
 
-  if(backpoint < frontpoint)
+  while(backpoint < frontpoint)
   {
-    //TODO: write remaining bytes [backpoint -> frontpoint] using outbuf_writepoint
+    *outbuf_writepoint = backpoint;
+    ++outbuf_writepoint;
+    ++backpoint;
   }
-  *outbuf_writepoint = chunk_end;
-  ++outbuf_writepoint;
+  if(chunk_end)
+  {
+    *outbuf_writepoint = chunk_end;
+    ++outbuf_writepoint;
+  }
+}
+
+
+extern inline void file_loader::null_readpoints()
+{
+  inbuf = nullptr;
+  inbuf_end = nullptr;
+  backpoint = nullptr;
+  frontpoint = nullptr;
+  inbuf_filename = nullptr;
+}
+
+
+extern inline void file_reader::null_writepoints()
+{
+  outbuf = nullptr;
+  outbuf_end = nullptr;
+  outbuf_writepoint = nullptr;
+  outbuf_filename = nullptr;
+}
+
+
+void file_reader::grow_outfile(size_t how_much)
+{
+    off_t writer_offset = outbuf_writepoint - outbuf;
+    munmap(outbuf, static_cast<size_t>(outbuf_end - outbuf));
+    how_much += static_cast<size_t>(outbuf_end - outbuf);
+
+    int fd = open(outbuf_filename, O_WRONLY);
+    ftruncate(fd, how_much);
+    outbuf = mmap(nullptr, how_much, PROT_WRITE, MAP_SHARED, fd, 0);
+    outbuf_end = outbuf + how_much;
+    outbuf_writepoint = outbuf + writer_offset;
+}
+
+
+void file_reader::shrink_outfile(size_t how_much)
+{
+  //TODO
 }
 
 
 file_loader& file_loader::operator=(const file_loader& fr)
 {
+  //TODO: may add boolean for equals operator to determine if is buffered_or_not
   terminate();
   //1. copy data
   //2. backpoint and frontpoint
@@ -315,18 +363,13 @@ extern inline void Tokenizador::constructionLogic()
 }
 
 
-//TODO: probably delete this function in favour of file_loader functions
-void Tokenizador::normalizeStream(string& buffer)
+extern inline char Tokenizador::normalizeChar(const char c)
 {
-  int16_t curChar;
-  for(auto i = buffer.begin(); i != buffer.end(); i++)
-  {
-    curChar = static_cast<int16_t>(*i);
-    if(curChar >= CAPITAL_START_POINT && curChar <= CAPITAL_END_POINT)
-      curChar += Tokenizador::TOLOWER_OFFSET;
-    else if(curChar - ACCENT_START_POINT >= 0)
-      curChar += Tokenizador::accentRemovalOffsetVec[curChar - ACCENT_START_POINT];
-    
-    *i = static_cast<char>(curChar);
-  }
+  int16_t curChar = static_cast<int16_t>(c);
+  if(curChar >= CAPITAL_START_POINT && curChar <= CAPITAL_END_POINT)
+    curChar += Tokenizador::TOLOWER_OFFSET;
+  else if(curChar - ACCENT_START_POINT >= 0)
+    curChar += Tokenizador::accentRemovalOffsetVec[curChar - ACCENT_START_POINT];
+
+  return static_cast<char>(curChar);
 }
