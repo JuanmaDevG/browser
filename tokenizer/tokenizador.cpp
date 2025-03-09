@@ -89,12 +89,6 @@ void file_reader::grow_outfile(size_t how_much)
 }
 
 
-void file_reader::shrink_outfile(size_t how_much)
-{
-  //TODO
-}
-
-
 file_loader& file_loader::operator=(const file_loader& fr)
 {
   //TODO: may add boolean for equals operator to determine if is buffered_or_not
@@ -103,6 +97,65 @@ file_loader& file_loader::operator=(const file_loader& fr)
   //2. backpoint and frontpoint
   //3. inbuf as ptr or mmap
   //4. outbuf as ptr or mmap
+}
+
+
+const void* memory_pool::write(const void *const chunk, const void *const chunk_end)
+{
+  size_t size = reinterpret_cast<const char*>(chunk_end) - reinterpret_cast<const char*>(chunk); //TODO: count sizes with offset defined in header file
+  if(size > MEM_POOL_SIZE
+  memory_pool::mv(chunk, this->data, );
+  return (size > (data_end - data) ? reinterpret_cast<void*>(remain_readpoint) : nullptr);
+}
+
+
+bool memory_pool::read(void *const dst, const void *const dst_end, const off_t read_startpoint)
+{
+  readpoint = reinterpret_cast<int64_t*>(reinterpret_cast<char*>(data) + read_startpoint);
+  writepoint = reinterpret_cast<int64_t *const>(dst);
+  remain_readpoint = data_end - (data_end & 0b111);
+  remain_writepoint = const_cast<char *const>(dst_end) - (const_cast<char *const>(dst_end) & 0b111); 
+
+  while(writepoint < reinterpret_cast<int64_t*>(remain_writepoint) && readpoint < reinterpret_cast<int64_t*>(remain_readpoint))
+  {
+    *writepoint = *readpoint;
+    ++writepoint;
+    ++readpoint;
+  }
+
+  //TODO: change the data_end by the should_do nigger
+  while(remain_writepoint < data_end && remain_readpoint < chunk_end)
+  {
+    *remain_writepoint = *remain_readpoint;
+    ++remain_writepoint;
+    ++remain_readpoint;
+  }
+  return true;
+}
+
+
+extern inline void memory_pool::mv(const void *const src, void *const dst, const size_t size)
+{
+  const int64_t* readpoint = reinterpret_cast<const int64_t*>(src);
+  int64_t* writepoint = reinterpret_cast<int64_t*>(dst);
+  const char *const redpoint_end = reinterpret_cast<const char *const>(src) + size;
+  const char *const writepoint_end = reinterpret_cast<const char *const>(dst) + size;
+  const char* remain_readpoint = readpoint_end - (readpoint_end & 0b111);
+  char* remain_writepoint = const_cast<char*>(writepoint_end) - (const_cast<char*>(writepoint_end) & 0b111);
+
+  while(writepoint < reinterpret_cast<int64_t*>(remain_writepoint) && readpoint < reinterpret_cast<int64_t*>(remain_readpoint))
+  {
+    *writepoint = *readpoint;
+    ++writepoint;
+    ++readpoint;
+  }
+
+  while(remain_writepoint < writepoint_end && remain_readpoint < readpoint_end)
+  {
+    *remain_writepoint = *remain_readpoint;
+    ++remain_writepoint;
+    ++remain_readpoint;
+  }
 }
 
 
@@ -326,27 +379,4 @@ extern inline char Tokenizador::normalizeChar(const char c)
   return static_cast<char>(curChar);
 }
 
-
-const void* Tokenizador::tmpStore(const void* const chunk, const size_t size)
-{
-  const char* chunk_end = static_cast<const char*>(chunk) + size;
-  const int64_t* readpoint = static_cast<const int64_t*>(chunk);
-  int64_t* writepoint = reinterpret_cast<int64_t*>(tmpData);
-  const char* remain_readpoint = chunk_end - (chunk_end & 0b111);
-  char* remain_writepoint = tmpDataEnd - (tmpDataEnd & 0b111);
-
-  while(writepoint < reinterpret_cast<int64_t*>(remain_writepoint) && readpoint < reinterpret_cast<int64_t*>(remain_readpoint))
-  {
-    *writepoint = *readpoint;
-    ++writepoint;
-    ++readpoint;
-  }
-
-  while(remain_writepoint < tmpDataEnd && remain_readpoint < chunk_end)
-  {
-    *remain_writepoint = *remain_readpoint;
-    ++remain_writepoint;
-    ++remain_readpoint;
-  }
-  return (size > (tmpDataEnd - tmpData) ? reinterpret_cast<void*>(remain_readpoint) : nullptr);
-}
+//TODO remove space

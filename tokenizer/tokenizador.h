@@ -8,7 +8,7 @@ using namespace std;
 #define ISO_8859_SIZE 256
 #define DELIMITER_BIT_VEC_SIZE (ISO_8859_SIZE >> 3)               // Total of 256 bits (32 bytes to store ISO-8859 delimiter state machine)
 #define AMD64_REGISTER_VEC_SIZE (DELIMITER_BIN_VEC_SIZE >> 3)
-#define TMP_DATA_SIZE 2048
+#define MEM_POOL_SIZE 2048
 
 
 struct file_loader {
@@ -27,6 +27,17 @@ struct file_loader {
   void grow_outfile(size_t how_much);
 
   file_loader& operator=(const file_loader&);
+};
+
+
+struct memory_pool {
+  char data[MEM_POOL_SIZE];
+  const char *const data_end = data + FIXED_BUFFER_SIZE;
+
+  const void* write(const void *const chunk, const void *const chunk_end, const off_t wrstart_point);
+  bool read(void* dst, const void *const dst_end, const off_t startpoint);
+
+  static void mv(const void *const src, void *const dst, const size_t size);
 };
 
 
@@ -100,7 +111,7 @@ private:
   bool casosEspeciales;
   bool pasarAminuscSinAcentos;
   file_loader loader;
-  char tmpData[TMP_DATA_SIZE];
+  memory_pool tmpData;
   const char *const tmpDataEnd = tmpData + TMP_DATA_SIZE;
 
   uint8_t& getDelimiterMemChunk(const char delim);
