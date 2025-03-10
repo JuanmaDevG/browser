@@ -7,26 +7,23 @@ using namespace std;
 
 #define ISO_8859_SIZE 256
 #define DELIMITER_BIT_VEC_SIZE (ISO_8859_SIZE >> 3)               // Total of 256 bits (32 bytes to store ISO-8859 delimiter state machine)
-#define AMD64_REGISTER_VEC_SIZE (DELIMITER_BIN_VEC_SIZE >> 3)
+#define AMD64_REGISTER_VEC_SIZE (DELIMITER_BIT_VEC_SIZE >> 3)
 #define MEM_POOL_SIZE 2048
 
 
 struct file_loader {
   const char* inbuf;
-  const char* inbuf_end;
-  const char* readpoint;
+  size_t inbuf_size;
   char* outbuf;
-  const char* outbuf_end;
-  char* writepoint;
+  size_t outbuf_size;
   const char* outbuf_filename;
 
   bool begin(const char* in_filename, const char* out_filename);
-  void terminate();
+  void terminate(char *const remaining_writepoint);
   void null_readpoints();
   void null_writepoints();
   void grow_outfile(size_t how_much);
-
-  file_loader& operator=(const file_loader&);
+  void shrink_outfile();
 };
 
 
@@ -34,8 +31,8 @@ struct memory_pool {
   char data[MEM_POOL_SIZE];
   const char *const data_end = data + FIXED_BUFFER_SIZE;
 
-  const void* write(const void *const chunk, const void *const chunk_end, const off_t wrstart_point);
-  bool read(void* dst, const void *const dst_end, const off_t startpoint);
+  void write(const void *const chunk, const size_t size, const off_t wrstart);
+  void read(void* dst, const size_t size, const off_t rdstart);
 
   static void mv(const void *const src, void *const dst, const size_t size);
 };
@@ -56,13 +53,13 @@ public:
 
   Tokenizador& operator=(const Tokenizador&);
 
-  void Tokenizar (const string& str, list<string>& tokens) const;
+  void Tokenizar (const string& str, list<string>& tokens);
 
-  bool Tokenizar (const string& i, const string& f) const; 
+  bool Tokenizar (const string& i, const string& f);
 
-  bool TokenizarListaFicheros (const string& i) const; 
+  bool TokenizarListaFicheros (const string& i); 
 
-  bool TokenizarDirectorio (const string& i) const; 
+  bool TokenizarDirectorio (const string& i); 
 
   void DelimitadoresPalabra(const string& nuevoDelimiters); 
 
@@ -108,21 +105,31 @@ private:
   };
 
   uint8_t delimitadoresPalabra[DELIMITER_BIT_VEC_SIZE];
+  //TODO: const uint8_t ... (o convertir en struct con funciones propias)
+  //delimitadoresUrl
+  //delimitadoresEmail
+  // (multipalabra no hace falta)
+  // (acronimos no hace falta)
+  // (numeros con puntos y comas tampoco hace falta)
   bool casosEspeciales;
   bool pasarAminuscSinAcentos;
   file_loader loader;
-  memory_pool tmpData;
-  const char *const tmpDataEnd = tmpData + TMP_DATA_SIZE;
-
-  uint8_t& getDelimiterMemChunk(const char delim);
+  memory_pool mem_pool;
+  const char* rdbegin;
+  const char* rd_current;
+  const char* rdend;
+  const char* wrbegin;
+  char* wr_current;
+  const char* wrend;
+  
+  uint8_t& _getDelimiterMemChunk(const char delim);
   bool chekcDelimiter(char) const;
   void setDelimiter(char, bool);
   void resetDelimiters();
   void copyDelimiters(const uint8_t*);
   void copyDelimitersFromString(const string&);
-  const void* tmpWrite(const void *const chunk, const size_t size);
-  void tmpRead(void* where, const size_t size); //TODO
   char normalizeChar(char);
-  
+  const char* extractToken(); //TODO pipeline: is_case -> write(normalized_if_needed)
+
   void constructionLogic();
 };

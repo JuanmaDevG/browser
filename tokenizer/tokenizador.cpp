@@ -9,16 +9,14 @@
 bool file_loader::begin(const char* filename, const char* output_filename = nullptr)
 {
   int fd = open(filename, O_RDONLY);
-  stat in_fileinfo;
+  struct stat in_fileinfo;
   if(fd < 0)
     return false;
 
   fstat(fd, &in_fileinfo);
   inbuf = (char*)mmap(nullptr, in_fileinfo.st_size, PROT_READ, MAP_SHARED, fd, 0);
   close(fd);
-  inbuf_end = inbuf + in_fileinfo.st_size;
-  backpoint = inbuf;
-  frontpoint = inbuf;
+  inbuf_size = in_fileinfo.st_size;
   inbuf_filename = filename;
 
   if(!output_filename) return true;
@@ -32,24 +30,25 @@ bool file_loader::begin(const char* filename, const char* output_filename = null
   ftruncate(fd, in_fileinfo.st_size);
   outbuf = (char*)mmap(nullptr, in_fileinfo.st_size, PROT_WRITE, MAP_SHARED, fd, 0);
   close(fd);
-  outbuf_end = outbuf + in_fileinfo.st_size;
-  outbuf_writepoint = outbuf;
+  outbuf_size = in_fileinfo.st_size;
   outbuf_filename = output_filename;
 
   return true;
 }
 
 
-void file_loader::terminate()
+void file_loader::terminate(char* const remaining_writepoint = nullptr)
 {
-  munmap(inbuf, static_cast<size_t>(inbuf_end - inbuf));
+  if(!inbuf) return;
+  munmap(inbuf, inbuf_size);
 
   if(outbuf) {
-    munmap(outbuf, static_cast<size_t>(outbuf_end - outbuf));
-    if(outbuf_end - outbuf_writepoint)  // Adjusting the filesize to the bytes written
+    munmap(outbuf, outbuf_size);
+    if(remaining_wirtepoint && (outbuf + outbuf_size) - remaining_writepoint)  // Adjust filesize
     {
       int fd = open(output_filename, O_WRONLY);
-      ftruncate(fd, (outbuf_end - outbuf) - (outbuf_end - outbuf_writepoint));
+      ftruncate(fd, outbuf_size - ((outbuf + outbuf_size) - remaining_writepoint));
+      close(fd);
     }
   }
 
@@ -61,76 +60,40 @@ void file_loader::terminate()
 extern inline void file_loader::null_readpoints()
 {
   inbuf = nullptr;
-  inbuf_end = nullptr;
-  readpoint = nullptr;
+  inbuf_size = 0;
 }
 
 
 extern inline void file_reader::null_writepoints()
 {
   outbuf = nullptr;
-  outbuf_end = nullptr;
-  writepoint = nullptr;
+  outbuf_size = 0;
   outbuf_filename = nullptr;
 }
 
 
 void file_reader::grow_outfile(size_t how_much)
 {
-    off_t writer_offset = outbuf_writepoint - outbuf;
-    munmap(outbuf, static_cast<size_t>(outbuf_end - outbuf));
-    how_much += static_cast<size_t>(outbuf_end - outbuf);
+  munmap(outbuf, outbuf_size);
+  how_much += outbuf_size;
 
-    int fd = open(outbuf_filename, O_WRONLY);
-    ftruncate(fd, how_much);
-    outbuf = mmap(nullptr, how_much, PROT_WRITE, MAP_SHARED, fd, 0);
-    outbuf_end = outbuf + how_much;
-    outbuf_writepoint = outbuf + writer_offset;
+  int fd = open(outbuf_filename, O_WRONLY);
+  ftruncate(fd, how_much);
+  outbuf = mmap(nullptr, how_much, PROT_WRITE, MAP_SHARED, fd, 0);
+  outbuf_size = how_much;
+  close(fd);
 }
 
 
-file_loader& file_loader::operator=(const file_loader& fr)
+const void* memory_pool::write(const void *const chunk, const size_t size, const off_t wrstart = 0)
 {
-  //TODO: may add boolean for equals operator to determine if is buffered_or_not
-  terminate();
-  //1. copy data
-  //2. backpoint and frontpoint
-  //3. inbuf as ptr or mmap
-  //4. outbuf as ptr or mmap
+  memory_pool::mv(chunk, this->data + wrstart, size);
 }
 
 
-const void* memory_pool::write(const void *const chunk, const void *const chunk_end)
+bool memory_pool::read(void *const dst, const size_t size, const off_t rdstart = 0)
 {
-  size_t size = reinterpret_cast<const char*>(chunk_end) - reinterpret_cast<const char*>(chunk); //TODO: count sizes with offset defined in header file
-  if(size > MEM_POOL_SIZE
-  memory_pool::mv(chunk, this->data, );
-  return (size > (data_end - data) ? reinterpret_cast<void*>(remain_readpoint) : nullptr);
-}
-
-
-bool memory_pool::read(void *const dst, const void *const dst_end, const off_t read_startpoint)
-{
-  readpoint = reinterpret_cast<int64_t*>(reinterpret_cast<char*>(data) + read_startpoint);
-  writepoint = reinterpret_cast<int64_t *const>(dst);
-  remain_readpoint = data_end - (data_end & 0b111);
-  remain_writepoint = const_cast<char *const>(dst_end) - (const_cast<char *const>(dst_end) & 0b111); 
-
-  while(writepoint < reinterpret_cast<int64_t*>(remain_writepoint) && readpoint < reinterpret_cast<int64_t*>(remain_readpoint))
-  {
-    *writepoint = *readpoint;
-    ++writepoint;
-    ++readpoint;
-  }
-
-  //TODO: change the data_end by the should_do nigger
-  while(remain_writepoint < data_end && remain_readpoint < chunk_end)
-  {
-    *remain_writepoint = *remain_readpoint;
-    ++remain_writepoint;
-    ++remain_readpoint;
-  }
-  return true;
+  memory_pool::mv(this->data + rdstart, dst, size);
 }
 
 
@@ -191,7 +154,7 @@ Tokenizador::Tokenizador(const Tokenizador& tk) : casosEspeciales(tk.casosEspeci
 Tokenizador::Tokenizador() : casosEspeciales(true), pasarAminuscSinAcentos(false), file_loader()
 {
   static const char* delimDefaults = ",;:.-/+*\\ '\"{}[]()<>¡!¿?&#=\t@";
-  char const* i = delimDefaults;
+  const char* i = delimDefaults;
   constructionLogic();
   while(*i != '\0')
   {
@@ -204,6 +167,7 @@ Tokenizador::Tokenizador() : casosEspeciales(true), pasarAminuscSinAcentos(false
 Tokenizador::~Tokenizador()
 {
   resetDelimiters();
+  loader.terminate();
 }
 
 
@@ -212,45 +176,46 @@ Tokenizador::Tokenizador& operator=(const Tokenizador& tk)
   casosEspeciales = tk.casosEspeciales;
   pasarAminuscSinAcentos = tk.pasarAminuscSinAcentos;
   copyDelimiters(tk.delimitadoresPalabra);
-  loader = tk.loader;
+  loader.terminate();
 }
 
 
-void Tokenizador::Tokenizar(const string& str, list<string>& tokens) const
+void Tokenizador::Tokenizar(const string& str, list<string>& tokens)
 {
-  //TODO: token pipeline: extract -> normalize -> state machine -> put (+endl ? reset state machine)
-
-  //TODO: substitute string buffer
-  string buffer(str);
   tokens.clear();
-  const char *strbegin = str.c_str(), const char *const strend = strbegin + str.length();
-  while(strbegin < strend)
-  {
-    // ALL THIS inside a superloop because of cyclic reads
-    // 1. Copy data
-    // 2. Normalize data
-    // 3. State machine
-    // 4. Push back string into list
-  }
+  rdbegin = str.c_str();
+  rd_current = rdbegin;
+  rdend = backpoint + str.length();
+  wrbegin = mem_pool.data;
+  wr_current = wrbegin;
+  wrend = wrbegin + MEM_POOL_SIZE;
 
-  //TODO: solve this shit
-  if(pasarAminuscSinAcentos)
-    normalizeStream(buffer);
+  while(rd_current < rdend)
+  {
+    //TODO: call extractToken
+    if(casosEspeciales)
+    {
+    }
+    else
+    {
+    }
+    ++readpoint;
+  }
 }
 
 
-bool Tokenizador::Tokenizar(const string& i, const string& f) const
+bool Tokenizador::Tokenizar(const string& i, const string& f)
 {
   //TODO: open file -> mmap -> copy to buffer -> normalize -> tokenize -> if not enough info then do partial load
 } 
 
 
-bool Tokenizador::TokenizarListaFicheros(const string& i) const
+bool Tokenizador::TokenizarListaFicheros(const string& i)
 {
 } 
 
 
-bool Tokenizador::TokenizarDirectorio(const string& i) const
+bool Tokenizador::TokenizarDirectorio(const string& i)
 {
 } 
 
@@ -306,7 +271,7 @@ bool Tokenizador::PasarAminuscSinAcentos() const
 }
 
 
-extern inline uint8_t& getDelimiterMemChunk(const char delim)
+extern inline uint8_t& _getDelimiterMemChunk(const char delim)
 {
   return this->delimitadoresPalabra[reinterpret_cast<uint8_t>(x) >> 3];
 }
@@ -314,16 +279,16 @@ extern inline uint8_t& getDelimiterMemChunk(const char delim)
 
 extern inline bool Tokenizador::checkDelimiter(const char delim_idx) const
 {
-  return (getDelimiterMemChunk(delim_idx) >> (delim_idx & 0b111)) & 1;
+  return (_getDelimiterMemChunk(delim_idx) >> (delim_idx & 0b111)) & 1;
 }
 
 
 extern inline void Tokenizador::setDelimiter(const char delim_idx, const bool val)
 {
   if(val)
-    getDelimiterMemChunk(delim_idx) = getDelimiterMemChunk(delim_idx) | (1 << (reinterpret_cast<uint8_t>(delim_idx) & 0b111));
+    _getDelimiterMemChunk(delim_idx) = _getDelimiterMemChunk(delim_idx) | (1 << (reinterpret_cast<uint8_t>(delim_idx) & 0b111));
   else
-    getDelimiterMemChunk(delim_idx) = getDelimiterMemChunk(delim_idx) & (0xff - (1 << (reinterpret_cast<uint8_t>(delim_idx) & 0b111)));
+    _getDelimiterMemChunk(delim_idx) = _getDelimiterMemChunk(delim_idx) & (0xff - (1 << (reinterpret_cast<uint8_t>(delim_idx) & 0b111)));
 }
 
 
@@ -360,14 +325,6 @@ extern inline void copyDelimitersFromString(const string& delimitadoresPalabra)
 }
 
 
-extern inline void Tokenizador::constructionLogic()
-{
-  resetDelimiters();
-  if(casosEspeciales)
-    setDelimiter(0x20 /*empty space*/, true);
-}
-
-
 extern inline char Tokenizador::normalizeChar(const char c)
 {
   int16_t curChar = static_cast<int16_t>(c);
@@ -379,4 +336,33 @@ extern inline char Tokenizador::normalizeChar(const char c)
   return static_cast<char>(curChar);
 }
 
-//TODO remove space
+
+const char* extractToken()
+{
+  if(casosEspeciales)
+  {
+    //TODO: activar casos especiales
+  }
+  else
+  {
+    while(checkDelimiter(*rd_current)) ++rd_current;
+    while(!checkDelimiter(*rd_current))
+    {
+      *wr_current = (pasarAminuscSinAcentos ? normalizeChar(*rd_current) : *rd_current);
+      ++rd_current;
+      ++wr_current;
+    }
+    *wr_current = '\0';
+    ++rd_current;
+    ++wr_current;
+  }
+  return wrbegin;
+}
+
+
+extern inline void Tokenizador::constructionLogic()
+{
+  resetDelimiters();
+  if(casosEspeciales)
+    setDelimiter(0x20 /*empty space*/, true);
+}
