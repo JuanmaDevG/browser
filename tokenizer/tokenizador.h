@@ -10,7 +10,7 @@ using namespace std;
 #define ISO_8859_SIZE 256
 #define DELIMITER_BIT_VEC_SIZE (ISO_8859_SIZE >> 3)               // Total of 256 bits (32 bytes to store ISO-8859 delimiter state machine)
 #define AMD64_REGISTER_VEC_SIZE (DELIMITER_BIT_VEC_SIZE >> 3)
-#define MEM_POOL_SIZE 1024
+#define MEM_POOL_SIZE 256
 
 
 struct file_loader {
@@ -32,20 +32,9 @@ struct memory_pool {
   char data[MEM_POOL_SIZE];
   const char *const data_end = data + MEM_POOL_SIZE;
   
-  char* auxbuf; //TODO: probably include functional with using for function type aliases
-  size_t auxbuf_size;
-
-  char* putbuf; //TODO: sustituir el putbuf por: put(writepoint*&, const char c), clean() que limpia toda la memoria sobrante
-  const char* put_end;
-  size_t putbuf_size;
-
   void write(const void *const chunk, const size_t size, const off_t wrstart);
   void read(void *const dst, const size_t size, const off_t rdstart);
-
-  void start_put_mode();
-  void put(const char);
-  char* get(const char end);
-  void end_put_mode();
+  size_t size();
 
   static void mv(const void *const src, void *const dst, const size_t size);
 };
@@ -117,13 +106,11 @@ private:
     0x0, 0x0, 0x0                                   // accented y, wtf, dieresy y
   };
 
+  using charwrite_function = void (Tokenizador::*)(void);
+  using charnormalize_function = char (Tokenizador::*)(const char);
+  using tkextract_function = const char* (Tokenizador::*)(const char);
+
   uint8_t delimitadoresPalabra[DELIMITER_BIT_VEC_SIZE];
-  //TODO: const uint8_t ... (o convertir en struct con funciones propias)
-  //delimitadoresUrl
-  //delimitadoresEmail
-  // (multipalabra no hace falta)
-  // (acronimos no hace falta)
-  // (numeros con puntos y comas tampoco hace falta)
   bool casosEspeciales;
   bool pasarAminuscSinAcentos;
   file_loader loader;
@@ -131,19 +118,36 @@ private:
   const char* rdbegin;
   const char* rd_current;
   const char* rdend;
-  const char* wrbegin;
+  char* wrbegin;
   char* wr_current;
   const char* wrend;
-  
+  tkextract_function extractToken;
+  charwrite_function writeChar;
+  charnormalize_function normalizeChar;
+
   uint8_t& _getDelimiterMemChunk(const char delim);
   bool checkDelimiter(char) const;
   void setDelimiter(char, bool);
   void resetDelimiters();
   void copyDelimiters(const uint8_t*);
   void copyDelimitersFromString(const string&);
-  char normalizeChar(char);
-  const char* extractToken(char);
+  void exportDelimiters(uint8_t*);
   void ensureOutfileHasEnoughMem();
+  void setMemPool();
+  void unsetMemPool();
+  void putTerminatingChar(const char);
+
+  // Values for extractToken
+  const char* extractCommonCaseToken(const char last_char);
+  const char* extractSpecialCaseToken(const char last_char);
+
+  // Values for writeChar:
+  void rawWrite();
+  void safeMemPoolWrite();
+
+  // Values for normalizeChar
+  char rawCharReturn(const char);
+  char minWithoutAccent(const char);
 
   void constructionLogic();
 };

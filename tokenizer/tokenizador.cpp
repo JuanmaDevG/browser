@@ -101,57 +101,9 @@ void memory_pool::read(void *const dst, const size_t size, const off_t rdstart =
 }
 
 
-void memory_pool::start_put_mode()
+extern inline size_t size()
 {
-  putbuf = data;
-  putpoint = putbuf;
-  put_end = putbuf + MEM_POOL_SIZE;
-  putbuf_size = MEM_POOL_SIZE;
-}
-
-
-void memory_pool::put(const char c)
-{
-  if(putbuf < put_end)
-  {
-    *putpoint = c;
-    ++putpoint;
-  }
-  else if(putbuf != data)
-  {
-    putbuf_size += MEM_POOL_SIZE;
-    char* newbuf = new char[putbuf_size];
-    mem_pool::mv(putbuf, newbuf, putbuf_size - MEM_POOL_SIZE);
-    putpoint = newbuf + (putpoint - putbuf);
-    delete[] putbuf;
-    putbuf = newbuf;
-    put_end = newbuf + putbuf_size;
-    put(c);
-  }
-  else
-  {
-    putbuf_size += MEM_POOL_SIZE;
-    putbuf = new char[putbuf_size];
-    mem_pool::mv(data, putbuf, MEM_POOL_SIZE);
-    putpoint = putbuf + (putpoint - data);
-    put_end = putbuf + putbuf_size;
-    put(c);
-  }
-}
-
-
-const char* memory_pool::get(const char end = '\0')
-{
-  put(end);
-  return putbuf;
-}
-
-
-void memory_pool::end_put_mode()
-{
-  if(putbuf != data && putbuf)
-    delete[] putbuf;
-  putbuf = nullptr;
+  return data_end - data;
 }
 
 
@@ -221,7 +173,7 @@ Tokenizador::Tokenizador() : casosEspeciales(true), pasarAminuscSinAcentos(false
     ++i;
   }
   loader = {0};
-}	
+}
 
 
 Tokenizador::~Tokenizador()
@@ -246,17 +198,16 @@ void Tokenizador::Tokenizar(const string& str, list<string>& tokens)
   rdbegin = str.c_str();
   rd_current = rdbegin;
   rdend = rdbegin + str.length();
-  wrbegin = mem_pool.data;
-  wr_current = const_cast<char*>(wrbegin);
-  wrend = wrbegin + MEM_POOL_SIZE;
+  setMemPool();
 
   const char* tk;
   while(rd_current < rdend)
   {
-    wr_current = mem_pool.data;
-    tk = extractToken();
+    wr_current = wrbegin;
+    tk = (this->*extractToken)();
     tokens.push_back(tk);
   }
+  unsetMemPool();
 }
 
 
@@ -271,13 +222,13 @@ bool Tokenizador::Tokenizar(const string& i, const string& f)
   rd_current = rdbegin;
   rdend = rdbegin + loader.inbuf_size;
   wrbegin = loader.outbuf;
-  wr_current = const_cast<char*>(wrbegin);
+  wr_current = wrbegin;
   wrend = wrbegin + loader.outbuf_size;
 
   const char* tk;
   while(rd_current < rdend)
   {
-    extractToken('\n');
+    (this->*extractToken)('\n');
     ensureOutfileHasEnoughMem();
   }
 
@@ -345,6 +296,7 @@ string Tokenizador::DelimitadoresPalabra() const
 void Tokenizador::CasosEspeciales(const bool nuevoCasosEspeciales)
 {
   casosEspeciales = nuevoCasosEspeciales;
+  extractToken = (casosEspeciales ? &Tokenizador::extractSpecialCaseToken : &Tokenizador::extractCommonCaseToken);
 }
 
 
@@ -357,6 +309,7 @@ void Tokenizador::CasosEspeciales() const
 void Tokenizador::PasarAminuscSinAcentos(const bool nuevoPasarAminuscSinAcentos)
 {
   pasarAminuscSinAcentos = nuevoPasarAminuscSinAcentos;
+  normalizeChar = (pasarAminuscSinAcentos ? &Tokenizador::minWithoutAccent : &Tokenizador::rawCharReturn);
 }
 
 
@@ -378,7 +331,7 @@ extern inline bool Tokenizador::checkDelimiter(const char delim_idx) const
 }
 
 
-extern inline void Tokenizador::setDelimiter(const char delim_idx, const bool val)
+void Tokenizador::setDelimiter(const char delim_idx, const bool val)
 {
   if(val)
     _getDelimiterMemChunk(delim_idx) = _getDelimiterMemChunk(delim_idx) | (1 << (reinterpret_cast<uint8_t>(delim_idx) & 0b111));
@@ -387,7 +340,7 @@ extern inline void Tokenizador::setDelimiter(const char delim_idx, const bool va
 }
 
 
-extern inline void Tokenizador::resetDelimiters()
+void Tokenizador::resetDelimiters()
 {
   int64_t* d = reinterpret_cast<int64_t*>(delimitadoresPalabra);
   const int64_t* end = reinterpret_cast<int64_t*>(delimitadoresPalabra) + AMD64_REGISTER_VEC_SIZE;
@@ -399,71 +352,22 @@ extern inline void Tokenizador::resetDelimiters()
 }
 
 
-extern inline void Tokenizador::copyDelimiters(const uint8_t* delim)
+void Tokenizador::copyDelimiters(const uint8_t* delim)
 {
-  int64_t const* rdata = reinterpret_cast<int64_t*>(delim);
-  int64_t* buffer = reinterpret_cast<int64_t*>(delimitadoresPalabra);
-  const int64_t* end = reinterpret_cast<int64_t*>(delimitadoresPalabra) + AMD64_REGISTER_VEC_SIZE;
-  while(buffer < end)
-  {
-    *buffer = *rdata;
-    ++rdata;
-    ++buffer;
-  }
+  memory_pool::mv(delim, delimitadoresPalabra, DELIMITER_BIT_VEC_SIZE);
 }
 
 
-extern inline void copyDelimitersFromString(const string& delimitadoresPalabra)
+void copyDelimitersFromString(const string& delimitadoresPalabra)
 {
   for(auto reader = delimitadoresPalabra.cbegin(); reader != delimitadoresPalabra.cend(); reader++)
     setDelimiter(*reader, true);
 }
 
 
-extern inline char Tokenizador::normalizeChar(const char c)
+void Tokenizador::exportDelimiters(uint8_t* dst)
 {
-  int16_t curChar = static_cast<int16_t>(c);
-  if(curChar >= CAPITAL_START_POINT && curChar <= CAPITAL_END_POINT)
-    curChar += Tokenizador::TOLOWER_OFFSET;
-  else if(curChar - ACCENT_START_POINT >= 0)
-    curChar += Tokenizador::accentRemovalOffsetVec[curChar - ACCENT_START_POINT];
-
-  return static_cast<char>(curChar);
-}
-
-
-const char* Tokenizador::extractToken(char last = '\0')
-{
-  /*
-  if(casosEspeciales)
-  {
-  }
-  else
-  {
-    while(checkDelimiter(*rd_current)) ++rd_current;
-    while(!checkDelimiter(*rd_current))
-    {
-      *wr_current = (pasarAminuscSinAcentos ? normalizeChar(*rd_current) : *rd_current);
-      ++rd_current;
-      ++wr_current;
-    }
-    *wr_current = '\0';
-    ++rd_current;
-    ++wr_current;
-  }
-  */
-  //TODO: tmp till special cases
-  while(checkDelimiter(*rd_current)) ++rd_current;
-  while(!checkDelimiter(*rd_current))
-  {
-    *wr_current = (pasarAminuscSinAcentos ? normalizeChar(*rd_current) : *rd_current);
-    ++rd_current;
-    ++wr_current;
-  }
-  *wr_current = last;
-  ++rd_current;
-  ++wr_current;
-  return wrbegin;
+  memory_pool::mv(delimitadoresPalabra, dst, DELIMITER_BIT_VEC_SIZE);
 }
 
 
@@ -478,10 +382,129 @@ extern inline void Tokenizador::ensureOutfileHasEnoughMem()
 }
 
 
+void Tokenizador::setMemPool()
+{
+  wrbegin = mem_pool.data;
+  wr_current = wrbegin;
+  wrend = mem_pool.data_end;
+  writeChar = &Tokenizador::safeMemPoolWrite;
+}
+
+
+void Tokenizador::unsetMemPool()
+{
+  if(wrbegin && wrbegin != loader.outbuf && wrbegin != mem_pool.data)
+  {
+    delete[] wrbegin;
+    wrbegin = nullptr;
+    writeChar = &Tokenizador::rawWrite;
+  }
+}
+
+
+void Tokenizador::putTerminatingChar(const char c)
+{
+  if(rd_current >= rdend)
+    rd_current -= (rd_current - rdend) +1;
+  (this->*writeChar)(); //To ensure buffer safety
+  --wr_current;
+  wr_current = c;
+  ++wr_current;
+}
+
+
+const char* Tokenizador::extractCommonCaseToken(const char last = '\0')
+{
+  while(rd_current < rdend && checkDelimiter(*rd_current)) ++rd_current;
+  while(rd_current < rdend && !checkDelimiter(*rd_current))
+  {
+    (this->*writeChar)();
+  }
+
+  putTerminatingChar(last);
+  return wrbegin;
+}
+
+
+const char* Tokenizador::extractSpecialCaseToken(const char last = '\0')
+{
+  //TODO: special cases
+}
+
+
+void Tokenizador::rawWrite()
+{
+  *wr_current = (this->*normalizeChar)(*rd_current);
+  ++wr_current;
+  ++rd_current;
+}
+
+
+void Tokenizador::safeMemPoolWrite()
+{
+  if(wr_current < wrend)
+  {
+    rawWrite();
+  }
+  else if(wr_current != mem_pool.data)
+  {
+    const size_t old_sz = (wrend - wrbegin);
+    const size_t new_sz = old_sz + MEM_POOL_SIZE;
+    char* newbuf = new char[new_sz];
+    mem_pool::mv(wrbegin, newbuf, old_sz);
+    wr_current = newbuf + old_sz;
+    delete[] wrbegin;
+    wrbegin = newbuf;
+    wrend = newbuf + new_sz;
+    rawWrite();
+  }
+  else
+  {
+    const size_t new_sz = MEM_POOL_SIZE + MEM_POOL_SIZE;
+    wrbegin = new char[new_sz];
+    mem_pool::mv(data, wrbegin, MEM_POOL_SIZE);
+    wr_current = wrbegin + MEM_POOL_SIZE;
+    wrend = wrbegin + new_sz;
+    rawWrite();
+  }
+}
+
+
+extern inline char Tokenizador::rawCharReturn(const char c)
+{
+  return c;
+}
+
+
+char Tokenizador::minWithoutAccent(const char c)
+{
+  int16_t curChar = static_cast<int16_t>(c);
+  if(curChar >= CAPITAL_START_POINT && curChar <= CAPITAL_END_POINT)
+    curChar += Tokenizador::TOLOWER_OFFSET;
+  else if(curChar - ACCENT_START_POINT >= 0)
+    curChar += Tokenizador::accentRemovalOffsetVec[curChar - ACCENT_START_POINT];
+
+  return static_cast<char>(curChar);
+}
+
+
 extern inline void Tokenizador::constructionLogic()
 {
   resetDelimiters();
   setDelimiter(0x20 /*empty space*/, true);
   setDelimiter('\0', true);
   setDelimiter('\n', true);
+  rdbegin = nullptr;
+  wrbegin = nullptr;
+  writeChar = &Tokenizador::rawWrite;
+  
+  if(casosEspeciales)
+    extractToken = &Tokenizador::extractSpecialCaseToken;
+  else
+    extractToken = &Tokenizador::extractCommonCaseToken;
+
+  if(pasarAminuscSinAcentos)
+    normalizeChar = &Tokenizador::minWithoutAccent;
+  else
+    normalizeChar = &Tokenizador::rawCharReturn;
 }
