@@ -2,13 +2,15 @@
 
 #include <iostream>
 #include <string>
+#include <list>
+#include <cstdint>
 
 using namespace std;
 
 #define ISO_8859_SIZE 256
 #define DELIMITER_BIT_VEC_SIZE (ISO_8859_SIZE >> 3)               // Total of 256 bits (32 bytes to store ISO-8859 delimiter state machine)
 #define AMD64_REGISTER_VEC_SIZE (DELIMITER_BIT_VEC_SIZE >> 3)
-#define MEM_POOL_SIZE 2048
+#define MEM_POOL_SIZE 1024
 
 
 struct file_loader {
@@ -22,17 +24,28 @@ struct file_loader {
   void terminate(char *const remaining_writepoint);
   void null_readpoints();
   void null_writepoints();
-  void grow_outfile(size_t how_much);
-  void shrink_outfile();
+  void grow_outfile(size_t how_much, const char** wr_beg, const char** wr_cur, const char** wr_end);
 };
 
 
 struct memory_pool {
   char data[MEM_POOL_SIZE];
-  const char *const data_end = data + FIXED_BUFFER_SIZE;
+  const char *const data_end = data + MEM_POOL_SIZE;
+  
+  char* auxbuf; //TODO: probably include functional with using for function type aliases
+  size_t auxbuf_size;
+
+  char* putbuf; //TODO: sustituir el putbuf por: put(writepoint*&, const char c), clean() que limpia toda la memoria sobrante
+  const char* put_end;
+  size_t putbuf_size;
 
   void write(const void *const chunk, const size_t size, const off_t wrstart);
-  void read(void* dst, const size_t size, const off_t rdstart);
+  void read(void *const dst, const size_t size, const off_t rdstart);
+
+  void start_put_mode();
+  void put(const char);
+  char* get(const char end);
+  void end_put_mode();
 
   static void mv(const void *const src, void *const dst, const size_t size);
 };
@@ -43,7 +56,7 @@ class Tokenizador
   friend ostream& operator<<(ostream&, const Tokenizador&);
 
 public:
-  Tokenizador (const string& delimitadoresPalabra, const bool kcasosEspeciales, const bool minuscSinAcentos);	
+  Tokenizador (const string& delimitadoresPalabra, const bool kcasosEspeciales, const bool minuscSinAcentos);
 
   Tokenizador (const Tokenizador&);
 
@@ -83,7 +96,7 @@ private:
   static const int16_t ACCENT_REMOVAL_VEC_SIZE = ISO_8859_SIZE - ACCENT_START_POINT;
   static const int16_t TOLOWER_OFFSET = 0x20;
 
-  static const int16_t accentRemovalOffsetVec[ACCENT_REMOVAL_VEC_SIZE] = {
+  static constexpr int16_t accentRemovalOffsetVec[ACCENT_REMOVAL_VEC_SIZE] = {
     -0x5f, -0x60, -0x61, -0x62, -0x63, -0x64,       // acctented A -> a
     0x0, 0x0,                                       // weird AE, c trencada
     -0x63, -0x64, -0x65, -0x66,                     // accented E -> e
@@ -92,13 +105,13 @@ private:
     -0x63, -0x64, -0x65, -0x66, -0x67,              // accented O -> o
     0x0, 0x0,                                       // x symbol, crossed O
     -0x64, -0x65, -0x66, -0x67,                     // accented U -> u
-    0x0, 0x0, 0x0                                   // accented Y, weird flag, beta
+    0x0, 0x0, 0x0,                                  // accented Y, weird flag, beta
     -0x7f, -0x80, -0x81, -0x82, -0x83, -0x84,       // accented a -> a
     0x0, 0x0,                                       // weird ae, c trencada
     -0x83, -0x84, -0x85, -0x86,                     // accented e -> e
     -0x83, -0x84, -0x85, -0x86,                     // accented i -> i
     0x0, 0x0,                                       // weird ro, enye
-    -0x83, -0x84, -0x85, -0x86, -0x87               // accented o -> o
+    -0x83, -0x84, -0x85, -0x86, -0x87,              // accented o -> o
     0x0, 0x0,                                       // divide sign, broken o
     -0x84, -0x85, -0x86, -0x87,                     // accented u -> u
     0x0, 0x0, 0x0                                   // accented y, wtf, dieresy y
@@ -123,13 +136,14 @@ private:
   const char* wrend;
   
   uint8_t& _getDelimiterMemChunk(const char delim);
-  bool chekcDelimiter(char) const;
+  bool checkDelimiter(char) const;
   void setDelimiter(char, bool);
   void resetDelimiters();
   void copyDelimiters(const uint8_t*);
   void copyDelimitersFromString(const string&);
   char normalizeChar(char);
-  const char* extractToken(); //TODO pipeline: is_case -> write(normalized_if_needed)
+  const char* extractToken(char);
+  void ensureOutfileHasEnoughMem();
 
   void constructionLogic();
 };
