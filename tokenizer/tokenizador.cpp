@@ -132,6 +132,18 @@ void memory_pool::mv(const void *const src, void *const dst, const size_t size)
 }
 
 
+void io_context::swap(io_context& ioc)
+{
+  volatile const char* ptr;
+  ptr = rdbegin; rdbegin = ioc.rdbegin; ioc.rdbegin = ptr;
+  ptr = rd_current; rd_current = ioc.rd_current; ioc.rdcurrent = ptr;
+  ptr = rdend; rdend = ioc.rdend; ioc.rdend = ptr;
+  ptr = wrbegin; wrbegin = ioc.wrbegin; ioc.wrbegin = const_cast<char*>(ptr);
+  ptr = wr_current; wr_current = ioc.wr_current; ioc.wr_current = const_cast<char*>(ptr);
+  ptr = wrend; wrend = ioc.wrend; ioc.wrend = ptr;
+}
+
+
 ostream& operator<<(ostream& os, const Tokenizador& tk)
 {
   cout << "DELIMITADORES: ";
@@ -239,14 +251,22 @@ bool Tokenizador::Tokenizar(const string& i, const string& f)
 
 bool Tokenizador::TokenizarListaFicheros(const string& i)
 {
+  //TODO: change all the Tokenizar methods now that the mem_pool has safe writes
   struct file_loader lista_ficheros;
+  //TODO: struct iocontext_block ioctx with function switch(const iocontext_block&)
   if(!lista_ficheros.begin(i)) return false;
-  string cur_file;
+
+  rdbegin = lista_ficheros.inbuf;
+  rd_current = rdbegin;
+  rd_end = lista_ficheros.inbuf + lista_ficheros.inbuf_size;
+  setMemPool();
+
   while(getline(lista_ficheros.inbuf, cur_file))
   {
     Tokenizar(cur_file, cur_file + ".tk");
   }
 
+  unsetMemPool();
   lista_ficheros.terminate();
   return true;
 } 

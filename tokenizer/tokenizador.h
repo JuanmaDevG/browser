@@ -40,6 +40,18 @@ struct memory_pool {
 };
 
 
+struct io_context {
+  const char* rdbegin;
+  const char* rd_current;
+  const char* rdend;
+  char* wrbegin;
+  char* wr_current;
+  const char* wrend;
+
+  void swap(io_context&);
+}
+
+
 class Tokenizador
 {
   friend ostream& operator<<(ostream&, const Tokenizador&);
@@ -115,6 +127,8 @@ private:
   bool pasarAminuscSinAcentos;
   file_loader loader;
   memory_pool mem_pool;
+  io_context ioctx;
+  //TODO: change all the rdbegin and stuff by ioctx.rdbegin... (constructors, getters, setters) (only rdbegin, wrbegin)
   const char* rdbegin;
   const char* rd_current;
   const char* rdend;
