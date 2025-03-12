@@ -134,13 +134,12 @@ void memory_pool::mv(const void *const src, void *const dst, const size_t size)
 
 void io_context::swap(io_context& ioc)
 {
-  volatile const char* ptr;
-  ptr = rdbegin; rdbegin = ioc.rdbegin; ioc.rdbegin = ptr;
-  ptr = rd_current; rd_current = ioc.rd_current; ioc.rdcurrent = ptr;
-  ptr = rdend; rdend = ioc.rdend; ioc.rdend = ptr;
-  ptr = wrbegin; wrbegin = ioc.wrbegin; ioc.wrbegin = const_cast<char*>(ptr);
-  ptr = wr_current; wr_current = ioc.wr_current; ioc.wr_current = const_cast<char*>(ptr);
-  ptr = wrend; wrend = ioc.wrend; ioc.wrend = ptr;
+  std::swap(rdbegin, ioc.rdbegin);
+  std::swap(rd_current, ioc.rd_current);
+  std::swap(rdend, ioc.rdend);
+  std::swap(wrbegin, ioc.wrbegin);
+  std::swap(wr_current, ioc.wr_current);
+  std::swap(wrend, ioc.wrend);
 }
 
 
@@ -207,15 +206,15 @@ Tokenizador::Tokenizador& operator=(const Tokenizador& tk)
 void Tokenizador::Tokenizar(const string& str, list<string>& tokens)
 {
   tokens.clear();
-  rdbegin = str.c_str();
-  rd_current = rdbegin;
-  rdend = rdbegin + str.length();
+  ioctx.rdbegin = str.c_str();
+  ioctx.rd_current = ioctx.rdbegin;
+  ioctx.rdend = ioctx.rdbegin + str.length();
   setMemPool();
 
   const char* tk;
-  while(rd_current < rdend)
+  while(ioctx.rd_current < ioctx.rdend)
   {
-    wr_current = wrbegin;
+    ioctx.wr_current = ioctx.wrbegin;
     tk = (this->*extractToken)();
     tokens.push_back(tk);
   }
@@ -230,21 +229,21 @@ bool Tokenizador::Tokenizar(const string& i, const string& f)
     cerr << "ERROR: No existe el archivo: " << i << endl;
     return false;
   }
-  rdbegin = loader.inbuf;
-  rd_current = rdbegin;
-  rdend = rdbegin + loader.inbuf_size;
-  wrbegin = loader.outbuf;
-  wr_current = wrbegin;
-  wrend = wrbegin + loader.outbuf_size;
+  ioctx.rdbegin = loader.inbuf;
+  ioctx.rd_current = ioctx.rdbegin;
+  ioctx.rdend = ioctx.rdbegin + loader.inbuf_size;
+  ioctx.wrbegin = loader.outbuf;
+  ioctx.wr_current = ioctx.wrbegin;
+  ioctx.wrend = ioctx.wrbegin + loader.outbuf_size;
 
   const char* tk;
-  while(rd_current < rdend)
+  while(ioctx.rd_current < ioctx.rdend)
   {
     (this->*extractToken)('\n');
     ensureOutfileHasEnoughMem();
   }
 
-  loader.terminate(wr_current);
+  loader.terminate(ioctx.wr_current);
   return true;
 } 
 
@@ -256,8 +255,8 @@ bool Tokenizador::TokenizarListaFicheros(const string& i)
   //TODO: struct iocontext_block ioctx with function switch(const iocontext_block&)
   if(!lista_ficheros.begin(i)) return false;
 
-  rdbegin = lista_ficheros.inbuf;
-  rd_current = rdbegin;
+  ioctx.rdbegin = lista_ficheros.inbuf;
+  ioctx.rd_current = ioctx.rdbegin;
   rd_end = lista_ficheros.inbuf + lista_ficheros.inbuf_size;
   setMemPool();
 
@@ -393,30 +392,30 @@ void Tokenizador::exportDelimiters(uint8_t* dst)
 
 extern inline void Tokenizador::ensureOutfileHasEnoughMem()
 {
-    if(rdend - rd_current > wrend - wr_current)
+    if(ioctx.rdend - ioctx.rd_current > ioctx.wrend - ioctx.wr_current)
     {
-      size_t difference = (rdend - rd_current) - (wrend - wr_current);
-      loader.grow_outfile(difference, &wrbwgin, &wr_current, &wrend);
-      rdend += difference;
+      size_t difference = (ioctx.rdend - ioctx.rd_current) - (ioctx.wrend - ioctx.wr_current);
+      loader.grow_outfile(difference, &wrbwgin, &ioctx.wr_current, &ioctx.wrend);
+      ioctx.rdend += difference;
     }
 }
 
 
 void Tokenizador::setMemPool()
 {
-  wrbegin = mem_pool.data;
-  wr_current = wrbegin;
-  wrend = mem_pool.data_end;
+  ioctx.wrbegin = mem_pool.data;
+  ioctx.wr_current = ioctx.wrbegin;
+  ioctx.wrend = mem_pool.data_end;
   writeChar = &Tokenizador::safeMemPoolWrite;
 }
 
 
 void Tokenizador::unsetMemPool()
 {
-  if(wrbegin && wrbegin != loader.outbuf && wrbegin != mem_pool.data)
+  if(ioctx.wrbegin && ioctx.wrbegin != loader.outbuf && ioctx.wrbegin != mem_pool.data)
   {
-    delete[] wrbegin;
-    wrbegin = nullptr;
+    delete[] ioctx.wrbegin;
+    ioctx.wrbegin = nullptr;
     writeChar = &Tokenizador::rawWrite;
   }
 }
@@ -424,25 +423,25 @@ void Tokenizador::unsetMemPool()
 
 void Tokenizador::putTerminatingChar(const char c)
 {
-  if(rd_current >= rdend)
-    rd_current -= (rd_current - rdend) +1;
+  if(ioctx.rd_current >= ioctx.rdend)
+    ioctx.rd_current -= (ioctx.rd_current - ioctx.rdend) +1;
   (this->*writeChar)(); //To ensure buffer safety
-  --wr_current;
-  wr_current = c;
-  ++wr_current;
+  --ioctx.wr_current;
+  ioctx.wr_current = c;
+  ++ioctx.wr_current;
 }
 
 
 const char* Tokenizador::extractCommonCaseToken(const char last = '\0')
 {
-  while(rd_current < rdend && checkDelimiter(*rd_current)) ++rd_current;
-  while(rd_current < rdend && !checkDelimiter(*rd_current))
+  while(ioctx.rd_current < ioctx.rdend && checkDelimiter(*ioctx.rd_current)) ++ioctx.rd_current;
+  while(ioctx.rd_current < ioctx.rdend && !checkDelimiter(*ioctx.rd_current))
   {
     (this->*writeChar)();
   }
 
   putTerminatingChar(last);
-  return wrbegin;
+  return ioctx.wrbegin;
 }
 
 
@@ -454,37 +453,37 @@ const char* Tokenizador::extractSpecialCaseToken(const char last = '\0')
 
 void Tokenizador::rawWrite()
 {
-  *wr_current = (this->*normalizeChar)(*rd_current);
-  ++wr_current;
-  ++rd_current;
+  *ioctx.wr_current = (this->*normalizeChar)(*ioctx.rd_current);
+  ++ioctx.wr_current;
+  ++ioctx.rd_current;
 }
 
 
 void Tokenizador::safeMemPoolWrite()
 {
-  if(wr_current < wrend)
+  if(ioctx.wr_current < ioctx.wrend)
   {
     rawWrite();
   }
-  else if(wr_current != mem_pool.data)
+  else if(ioctx.wr_current != mem_pool.data)
   {
-    const size_t old_sz = (wrend - wrbegin);
+    const size_t old_sz = (ioctx.wrend - ioctx.wrbegin);
     const size_t new_sz = old_sz + MEM_POOL_SIZE;
     char* newbuf = new char[new_sz];
-    mem_pool::mv(wrbegin, newbuf, old_sz);
-    wr_current = newbuf + old_sz;
-    delete[] wrbegin;
-    wrbegin = newbuf;
-    wrend = newbuf + new_sz;
+    mem_pool::mv(ioctx.wrbegin, newbuf, old_sz);
+    ioctx.wr_current = newbuf + old_sz;
+    delete[] ioctx.wrbegin;
+    ioctx.wrbegin = newbuf;
+    ioctx.wrend = newbuf + new_sz;
     rawWrite();
   }
   else
   {
     const size_t new_sz = MEM_POOL_SIZE + MEM_POOL_SIZE;
-    wrbegin = new char[new_sz];
-    mem_pool::mv(data, wrbegin, MEM_POOL_SIZE);
-    wr_current = wrbegin + MEM_POOL_SIZE;
-    wrend = wrbegin + new_sz;
+    ioctx.wrbegin = new char[new_sz];
+    mem_pool::mv(data, ioctx.wrbegin, MEM_POOL_SIZE);
+    ioctx.wr_current = ioctx.wrbegin + MEM_POOL_SIZE;
+    ioctx.wrend = ioctx.wrbegin + new_sz;
     rawWrite();
   }
 }
@@ -514,8 +513,8 @@ extern inline void Tokenizador::constructionLogic()
   setDelimiter(0x20 /*empty space*/, true);
   setDelimiter('\0', true);
   setDelimiter('\n', true);
-  rdbegin = nullptr;
-  wrbegin = nullptr;
+  ioctx.rdbegin = nullptr;
+  ioctx.wrbegin = nullptr;
   writeChar = &Tokenizador::rawWrite;
   
   if(casosEspeciales)

@@ -128,13 +128,6 @@ private:
   file_loader loader;
   memory_pool mem_pool;
   io_context ioctx;
-  //TODO: change all the rdbegin and stuff by ioctx.rdbegin... (constructors, getters, setters) (only rdbegin, wrbegin)
-  const char* rdbegin;
-  const char* rd_current;
-  const char* rdend;
-  char* wrbegin;
-  char* wr_current;
-  const char* wrend;
   tkextract_function extractToken;
   charwrite_function writeChar;
   charnormalize_function normalizeChar;
