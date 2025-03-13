@@ -1,9 +1,0 @@
-#!/bin/bash
-# Here is the source that makes the directory structure for the university deliver
-
-mkdir target
-cd target
-mkdir include lib src
-echo -e "1_DNI: 51254578K\n\n1_NOMBRE: Gonzalez, Martinez, Juan Manuel" > nombres.txt
-
-cd ..

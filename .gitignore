@@ -34,3 +34,4 @@
 # Tokenizer trash
 *.lista_fich
 target/
+*.tmp
