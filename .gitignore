@@ -33,4 +33,4 @@
 
 # Tokenizer trash
 *.lista_fich
-build/*
+target/
