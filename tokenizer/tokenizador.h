@@ -24,7 +24,7 @@ struct file_loader {
   void terminate(char *const remaining_writepoint);
   void null_readpoints();
   void null_writepoints();
-  void grow_outfile(size_t how_much, const char** wr_beg, const char** wr_cur, const char** wr_end);
+  void grow_outfile(size_t how_much, char** wr_beg, char** wr_cur, char** wr_end);
 };
 
 
@@ -49,7 +49,7 @@ struct io_context {
   const char* wrend;
 
   void swap(io_context&);
-}
+};
 
 
 class Tokenizador
@@ -77,9 +77,9 @@ public:
 
   void DelimitadoresPalabra(const string& nuevoDelimiters); 
 
-  void AnyadirDelimitadoresPalabra(const string& nuevoDelimiters);
+  string DelimitadoresPalabra() const;
 
-  string DelimitadoresPalabra() const; 
+  void AnyadirDelimitadoresPalabra(const string& nuevoDelimiters);
 
   void CasosEspeciales (const bool nuevoCasosEspeciales);
 
@@ -132,7 +132,6 @@ private:
   charwrite_function writeChar;
   charnormalize_function normalizeChar;
 
-  uint8_t& _getDelimiterMemChunk(const char delim);
   bool checkDelimiter(char) const;
   void setDelimiter(char, bool);
   void resetDelimiters();

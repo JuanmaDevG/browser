@@ -5,6 +5,10 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+//TODO: solve the const qualifiers for const member functions
+//TODO: uninclude this when possible
+#include<fstream>
+
 
 bool file_loader::begin(const char* filename, const char* output_filename = nullptr)
 {
@@ -71,7 +75,7 @@ extern inline void file_loader::null_writepoints()
 }
 
 
-void file_loader::grow_outfile(size_t how_much, const char** wr_beg, const char** wr_cur, const char** wr_end)
+void file_loader::grow_outfile(size_t how_much, char** wr_beg, char** wr_cur, char** wr_end)
 {
   munmap(outbuf, outbuf_size);
   how_much += outbuf_size;
@@ -101,7 +105,7 @@ void memory_pool::read(void *const dst, const size_t size, const off_t rdstart =
 }
 
 
-extern inline size_t size()
+extern inline size_t memory_pool::size()
 {
   return data_end - data;
 }
@@ -147,12 +151,14 @@ ostream& operator<<(ostream& os, const Tokenizador& tk)
 {
   cout << "DELIMITADORES: ";
   for(uint8_t i=0; i < ISO_8859_SIZE; ++i)
-    if(tk.checkDelimiter(static_cast<char>(i)))
-      cout << reinterpret_cast<char>(i);
+    if(tk.checkDelimiter(i))
+      cout << static_cast<const char>(i);
 
   cout << " TRATA DE CASOS ESPECIALES: " << tk.casosEspeciales 
     << " PASAR A MINUSCULAS Y SIN ACENTOS: " << tk.pasarAminuscSinAcentos
     << flush;
+
+  return os;
 }
 
 
@@ -194,12 +200,13 @@ Tokenizador::~Tokenizador()
 }
 
 
-Tokenizador::Tokenizador& operator=(const Tokenizador& tk)
+Tokenizador& Tokenizador::operator=(const Tokenizador& tk)
 {
   casosEspeciales = tk.casosEspeciales;
   pasarAminuscSinAcentos = tk.pasarAminuscSinAcentos;
   copyDelimiters(tk.delimitadoresPalabra);
   loader.terminate();
+  return *this;
 }
 
 
@@ -215,7 +222,7 @@ void Tokenizador::Tokenizar(const string& str, list<string>& tokens)
   while(ioctx.rd_current < ioctx.rdend)
   {
     ioctx.wr_current = ioctx.wrbegin;
-    tk = (this->*extractToken)();
+    tk = (this->*extractToken)('\0');
     tokens.push_back(tk);
   }
   unsetMemPool();
@@ -229,6 +236,7 @@ bool Tokenizador::Tokenizar(const string& i, const string& f)
     cerr << "ERROR: No existe el archivo: " << i << endl;
     return false;
   }
+  //TODO: make func ioctx view_file(file_loader)
   ioctx.rdbegin = loader.inbuf;
   ioctx.rd_current = ioctx.rdbegin;
   ioctx.rdend = ioctx.rdbegin + loader.inbuf_size;
@@ -250,23 +258,15 @@ bool Tokenizador::Tokenizar(const string& i, const string& f)
 
 bool Tokenizador::TokenizarListaFicheros(const string& i)
 {
-  //TODO: change all the Tokenizar methods now that the mem_pool has safe writes
-  struct file_loader lista_ficheros;
-  //TODO: struct iocontext_block ioctx with function switch(const iocontext_block&)
-  if(!lista_ficheros.begin(i)) return false;
-
-  ioctx.rdbegin = lista_ficheros.inbuf;
-  ioctx.rd_current = ioctx.rdbegin;
-  rd_end = lista_ficheros.inbuf + lista_ficheros.inbuf_size;
-  setMemPool();
-
-  while(getline(lista_ficheros.inbuf, cur_file))
+  //TODO: optimize (when possible)
+  ifstream list_file(i);
+  if(!list_file.is_open()) return false;
+  string cur_file;
+  while(getline(list_file, cur_file))
   {
     Tokenizar(cur_file, cur_file + ".tk");
   }
 
-  unsetMemPool();
-  lista_ficheros.terminate();
   return true;
 } 
 
@@ -302,10 +302,10 @@ string Tokenizador::DelimitadoresPalabra() const
 {
   string result;
   result.reserve(ISO_8859_SIZE);
-  for(int i=0; i < ISO_8859_SIZE; ++i)
+  for(uint8_t i=0; i < ISO_8859_SIZE; ++i)
   {
-    if(checkDelimiter(const_cast<char>(i)))
-      result.push_back(const_cast<char>(i));
+    if(checkDelimiter(static_cast<char>(i)))
+      result.push_back(static_cast<char>(i));
   }
 
   return result;
@@ -319,7 +319,7 @@ void Tokenizador::CasosEspeciales(const bool nuevoCasosEspeciales)
 }
 
 
-void Tokenizador::CasosEspeciales() const
+bool Tokenizador::CasosEspeciales() const
 {
   return casosEspeciales;
 }
@@ -338,24 +338,18 @@ bool Tokenizador::PasarAminuscSinAcentos() const
 }
 
 
-extern inline uint8_t& _getDelimiterMemChunk(const char delim)
-{
-  return this->delimitadoresPalabra[reinterpret_cast<uint8_t>(x) >> 3];
-}
-
-
 extern inline bool Tokenizador::checkDelimiter(const char delim_idx) const
 {
-  return (_getDelimiterMemChunk(delim_idx) >> (delim_idx & 0b111)) & 1;
+  return static_cast<bool>((this->delimitadoresPalabra[delim_idx >> 3] >> (delim_idx & 0b111)) & 1);
 }
 
 
 void Tokenizador::setDelimiter(const char delim_idx, const bool val)
 {
   if(val)
-    _getDelimiterMemChunk(delim_idx) = _getDelimiterMemChunk(delim_idx) | (1 << (reinterpret_cast<uint8_t>(delim_idx) & 0b111));
+    this->delimitadoresPalabra[delim_idx >> 3] = this->delimitadoresPalabra[delim_idx >> 3] | (1 << (static_cast<uint8_t>(delim_idx) & 0b111));
   else
-    _getDelimiterMemChunk(delim_idx) = _getDelimiterMemChunk(delim_idx) & (0xff - (1 << (reinterpret_cast<uint8_t>(delim_idx) & 0b111)));
+    this->delimitadoresPalabra[delim_idx >> 3] = this->delimitadoresPalabra[delim_idx >> 3] & (0xff - (1 << (static_cast<uint8_t>(delim_idx) & 0b111)));
 }
 
 
@@ -377,7 +371,7 @@ void Tokenizador::copyDelimiters(const uint8_t* delim)
 }
 
 
-void copyDelimitersFromString(const string& delimitadoresPalabra)
+void Tokenizador::copyDelimitersFromString(const string& delimitadoresPalabra)
 {
   for(auto reader = delimitadoresPalabra.cbegin(); reader != delimitadoresPalabra.cend(); reader++)
     setDelimiter(*reader, true);
@@ -395,7 +389,7 @@ extern inline void Tokenizador::ensureOutfileHasEnoughMem()
     if(ioctx.rdend - ioctx.rd_current > ioctx.wrend - ioctx.wr_current)
     {
       size_t difference = (ioctx.rdend - ioctx.rd_current) - (ioctx.wrend - ioctx.wr_current);
-      loader.grow_outfile(difference, &wrbwgin, &ioctx.wr_current, &ioctx.wrend);
+      loader.grow_outfile(difference, &ioctx.wrbegin, &ioctx.wr_current, &ioctx.wrend);
       ioctx.rdend += difference;
     }
 }
@@ -432,7 +426,7 @@ void Tokenizador::putTerminatingChar(const char c)
 }
 
 
-const char* Tokenizador::extractCommonCaseToken(const char last = '\0')
+const char* Tokenizador::extractCommonCaseToken(const char last)
 {
   while(ioctx.rd_current < ioctx.rdend && checkDelimiter(*ioctx.rd_current)) ++ioctx.rd_current;
   while(ioctx.rd_current < ioctx.rdend && !checkDelimiter(*ioctx.rd_current))
@@ -445,9 +439,9 @@ const char* Tokenizador::extractCommonCaseToken(const char last = '\0')
 }
 
 
-const char* Tokenizador::extractSpecialCaseToken(const char last = '\0')
+const char* Tokenizador::extractSpecialCaseToken(const char last)
 {
-  //TODO: special cases
+  extractCommonCaseToken(last); //TODO: special cases
 }
 
 
