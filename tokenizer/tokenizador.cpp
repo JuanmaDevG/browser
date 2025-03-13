@@ -5,8 +5,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-//TODO: solve the const qualifiers for const member functions
-//TODO: uninclude this when possible
+//TODO: don't include this when possible
 #include<fstream>
 
 
@@ -75,7 +74,7 @@ extern inline void file_loader::null_writepoints()
 }
 
 
-void file_loader::grow_outfile(size_t how_much, char** wr_beg, char** wr_cur, char** wr_end)
+void file_loader::grow_outfile(size_t how_much, io_context& bound_ioc)
 {
   munmap(outbuf, outbuf_size);
   how_much += outbuf_size;
@@ -86,10 +85,10 @@ void file_loader::grow_outfile(size_t how_much, char** wr_beg, char** wr_cur, ch
   outbuf_size = how_much;
   close(fd);
   
-  size_t back_diff = *wr_cur - *wr_beg;
-  *wr_beg = outbuf;
-  *wr_cur = outbuf + back_diff;
-  *wr_end = outbuf + outbuf_size;
+  size_t back_diff = bound_ioc.wr_current - bound_ioc.wrbegin;
+  bound_ioc.wrbegin = outbuf;
+  bound_ioc.wr_current = outbuf + back_diff;
+  bound_ioc.wrend = outbuf + outbuf_size;
 }
 
 
@@ -236,7 +235,7 @@ bool Tokenizador::Tokenizar(const string& i, const string& f)
     cerr << "ERROR: No existe el archivo: " << i << endl;
     return false;
   }
-  //TODO: make func ioctx view_file(file_loader)
+  //TODO: make func to bind ioctx to file_loader or memory_pool
   ioctx.rdbegin = loader.inbuf;
   ioctx.rd_current = ioctx.rdbegin;
   ioctx.rdend = ioctx.rdbegin + loader.inbuf_size;
@@ -384,14 +383,16 @@ void Tokenizador::exportDelimiters(uint8_t* dst)
 }
 
 
+//TODO: change this to loader.truncate_outfile_mem(ioctx) or ioctx.ensure_outfile_mem(file_loader)
+//TODO: consider adding an object reference to some of the structs
 extern inline void Tokenizador::ensureOutfileHasEnoughMem()
 {
-    if(ioctx.rdend - ioctx.rd_current > ioctx.wrend - ioctx.wr_current)
-    {
-      size_t difference = (ioctx.rdend - ioctx.rd_current) - (ioctx.wrend - ioctx.wr_current);
-      loader.grow_outfile(difference, &ioctx.wrbegin, &ioctx.wr_current, &ioctx.wrend);
-      ioctx.rdend += difference;
-    }
+  if(ioctx.rdend - ioctx.rd_current > ioctx.wrend - ioctx.wr_current)
+  {
+    size_t difference = (ioctx.rdend - ioctx.rd_current) - (ioctx.wrend - ioctx.wr_current);
+    loader.grow_outfile(difference, ioctx);
+    ioctx.rdend += difference;
+  }
 }
 
 
@@ -421,7 +422,7 @@ void Tokenizador::putTerminatingChar(const char c)
     ioctx.rd_current -= (ioctx.rd_current - ioctx.rdend) +1;
   (this->*writeChar)(); //To ensure buffer safety
   --ioctx.wr_current;
-  ioctx.wr_current = c;
+  *ioctx.wr_current = c;
   ++ioctx.wr_current;
 }
 
@@ -441,7 +442,7 @@ const char* Tokenizador::extractCommonCaseToken(const char last)
 
 const char* Tokenizador::extractSpecialCaseToken(const char last)
 {
-  extractCommonCaseToken(last); //TODO: special cases
+  return extractCommonCaseToken(last); //TODO: special cases
 }
 
 
@@ -464,7 +465,7 @@ void Tokenizador::safeMemPoolWrite()
     const size_t old_sz = (ioctx.wrend - ioctx.wrbegin);
     const size_t new_sz = old_sz + MEM_POOL_SIZE;
     char* newbuf = new char[new_sz];
-    mem_pool::mv(ioctx.wrbegin, newbuf, old_sz);
+    memory_pool::mv(ioctx.wrbegin, newbuf, old_sz);
     ioctx.wr_current = newbuf + old_sz;
     delete[] ioctx.wrbegin;
     ioctx.wrbegin = newbuf;
@@ -475,7 +476,7 @@ void Tokenizador::safeMemPoolWrite()
   {
     const size_t new_sz = MEM_POOL_SIZE + MEM_POOL_SIZE;
     ioctx.wrbegin = new char[new_sz];
-    mem_pool::mv(data, ioctx.wrbegin, MEM_POOL_SIZE);
+    memory_pool::mv(mem_pool.data, ioctx.wrbegin, MEM_POOL_SIZE);
     ioctx.wr_current = ioctx.wrbegin + MEM_POOL_SIZE;
     ioctx.wrend = ioctx.wrbegin + new_sz;
     rawWrite();

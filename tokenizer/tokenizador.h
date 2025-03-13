@@ -13,6 +13,8 @@ using namespace std;
 #define MEM_POOL_SIZE 256
 
 
+struct io_context;
+
 struct file_loader {
   const char* inbuf;
   size_t inbuf_size;
@@ -24,7 +26,8 @@ struct file_loader {
   void terminate(char *const remaining_writepoint);
   void null_readpoints();
   void null_writepoints();
-  void grow_outfile(size_t how_much, char** wr_beg, char** wr_cur, char** wr_end);
+  void grow_outfile(size_t how_much, io_context& bound_ioc);
+  //TODO: bind(io_context) or ibind(io_context) obind(io_context)
 };
 
 
@@ -35,6 +38,7 @@ struct memory_pool {
   void write(const void *const chunk, const size_t size, const off_t wrstart);
   void read(void *const dst, const size_t size, const off_t rdstart);
   size_t size();
+  //TODO: bind(io_context)
 
   static void mv(const void *const src, void *const dst, const size_t size);
 };
