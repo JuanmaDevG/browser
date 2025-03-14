@@ -149,9 +149,32 @@ void io_context::swap(io_context& ioc)
 ostream& operator<<(ostream& os, const Tokenizador& tk)
 {
   cout << "DELIMITADORES: ";
-  for(uint8_t i=0; i < ISO_8859_SIZE; ++i)
+  for(uint8_t i=0;; ++i)
+  {
     if(tk.checkDelimiter(i))
-      cout << static_cast<const char>(i);
+    {
+      cout << (char)i;
+      /*
+      switch((char)i)
+      {
+        case '\n':
+          cout << "\\n";
+          break;
+        case '\t':
+          cout << "\\t";
+          break;
+        case '\\':
+          cout << "\\";
+          break;
+        default:
+          cout << (char)i;
+      }
+      */
+    }
+
+    if(i == ISO_8859_SIZE -1)
+      break;
+  }
 
   cout << " TRATA DE CASOS ESPECIALES: " << tk.casosEspeciales 
     << " PASAR A MINUSCULAS Y SIN ACENTOS: " << tk.pasarAminuscSinAcentos
@@ -337,13 +360,13 @@ bool Tokenizador::PasarAminuscSinAcentos() const
 }
 
 
-extern inline bool Tokenizador::checkDelimiter(const char delim_idx) const
+extern inline bool Tokenizador::checkDelimiter(const uint8_t delim_idx) const
 {
   return static_cast<bool>((this->delimitadoresPalabra[delim_idx >> 3] >> (delim_idx & 0b111)) & 1);
 }
 
 
-void Tokenizador::setDelimiter(const char delim_idx, const bool val)
+void Tokenizador::setDelimiter(const uint8_t delim_idx, const bool val)
 {
   if(val)
     this->delimitadoresPalabra[delim_idx >> 3] = this->delimitadoresPalabra[delim_idx >> 3] | (1 << (static_cast<uint8_t>(delim_idx) & 0b111));

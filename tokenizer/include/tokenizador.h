@@ -136,8 +136,8 @@ private:
   charwrite_function writeChar;
   charnormalize_function normalizeChar;
 
-  bool checkDelimiter(char) const;
-  void setDelimiter(char, bool);
+  bool checkDelimiter(uint8_t) const;
+  void setDelimiter(uint8_t, bool);
   void resetDelimiters();
   void copyDelimiters(const uint8_t*);
   void copyDelimitersFromString(const string&);

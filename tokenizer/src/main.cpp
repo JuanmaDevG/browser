@@ -24,42 +24,16 @@ main(void)
 
 	list<string> lt1, lt2;
 
-Tokenizador a("-#", true, false); 
+Tokenizador a("", true, false); 
 list<string> tokens; 
 
-a.Tokenizar("MS-DOS p1 p2 UN-DOS-TRES", tokens);
+a.Tokenizar("http:", tokens);
 	imprimirListaSTL(tokens);
 
-a.Tokenizar("pal1 -MS-DOS p1 p2", tokens);
+a.Tokenizar("http:////ab/", tokens);
 	imprimirListaSTL(tokens);
 
-a.Tokenizar("pal1 MS-DOS#p3 p1 p2", tokens);
-	imprimirListaSTL(tokens);
-
-a.Tokenizar("pal1#MS-DOS#p3 p1 p2", tokens);
-	imprimirListaSTL(tokens);
-
-a.DelimitadoresPalabra("/ ");
-a.Tokenizar("MS-DOS p1 p2", tokens);
-	imprimirListaSTL(tokens);
-
-a.Tokenizar("pal1 -MS-DOS p1 p2", tokens);
-	imprimirListaSTL(tokens);
-
-a.Tokenizar("pal1 MS-DOS#p3 p1 p2", tokens);
-	imprimirListaSTL(tokens);
-
-a.Tokenizar("pal1#MS-DOS#p3 p1 p2", tokens);
-	imprimirListaSTL(tokens);
-
-
-a.PasarAminuscSinAcentos(true);
-a.Tokenizar("pal1#MS-DOSaA#p3 p1 p2", tokens);
-	imprimirListaSTL(tokens);
-
-a.DelimitadoresPalabra("/-");
-a.CasosEspeciales (false);
-a.Tokenizar("pal1#MS-DOSaA#p3 p1 p2", tokens);
+a.Tokenizar("http:////ab.", tokens);
 	imprimirListaSTL(tokens);
 
 
