@@ -146,6 +146,7 @@ private:
   void setMemPool();
   void unsetMemPool();
   void putTerminatingChar(const char);
+  void skipDelimiters(const bool leaveLastOne);
 
   // Values for extractToken
   const char* extractCommonCaseToken(const char last_char);
@@ -158,6 +159,13 @@ private:
   // Values for normalizeChar
   char rawCharReturn(const char);
   char minWithoutAccent(const char);
+
+  // Special case detection functions
+  const char* multiwordEndsAt();
+  const char* urlEndsAt();
+  const char* emailEndsAt();
+  const char* acronymEndsAt();
+  const char* decimalEndsAt();
 
   void constructionLogic();
 };

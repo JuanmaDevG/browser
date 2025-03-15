@@ -450,9 +450,20 @@ void Tokenizador::putTerminatingChar(const char c)
 }
 
 
+void Tokenizador::skipDelimiters(const bool leaveLastOne)
+{
+  if(!checkDelimiter(*ioctx.rd_current)) return;
+  while(ioctx.rd_current < ioctx.rdend && checkDelimiter(*ioctx.rd_current))
+    ++ioctx.rd_current;
+
+  if(leaveLastOne)
+    --ioctx.rd_current;
+}
+
+
 const char* Tokenizador::extractCommonCaseToken(const char last)
 {
-  while(ioctx.rd_current < ioctx.rdend && checkDelimiter(*ioctx.rd_current)) ++ioctx.rd_current;
+  skipDelimiters(false);
   while(ioctx.rd_current < ioctx.rdend && !checkDelimiter(*ioctx.rd_current))
   {
     (this->*writeChar)();
@@ -465,7 +476,12 @@ const char* Tokenizador::extractCommonCaseToken(const char last)
 
 const char* Tokenizador::extractSpecialCaseToken(const char last)
 {
-  return extractCommonCaseToken(last); //TODO: special cases
+  skipDelimiters(true);
+  //TODO: first words that can afford starting with delimiters (but if not starting with, skip delimiter and continue analysis)
+  // Then words that don't start with delimiters for sure
+  const char* word_end = nullptr;
+
+  return ioctx.wrbegin;
 }
 
 
@@ -522,6 +538,54 @@ char Tokenizador::minWithoutAccent(const char c)
     curChar += Tokenizador::accentRemovalOffsetVec[curChar - ACCENT_START_POINT];
 
   return static_cast<char>(curChar);
+}
+
+
+const char* Tokenizador::okMuliword()
+{
+  const char* reader = ioctx.rd_current;
+  if(!checkDelimiter('-') || checkDelimiter(*reader))
+    return nullptr;
+
+  while(reader < ioctx.rdend && !checkDelimiter(*reader))
+    ++reader;
+  if(reader == ioctx.rdend || *reader != '-' || reader +1 == ioctx.rdend || checkDelimiter(*(reader +1)))
+    return nullptr;
+
+  reader += 2;
+  while(reader < ioctx.rdend)
+  {
+    // hyphen allowed
+    while(reader < ioctx.rdend && !checkDelimiter(*reader))
+      ++reader;
+
+    // no hyphen means end delimiter
+    if(reader == ioctx.rdend || *reader != '-' || reader +1 == ioctx.rdend || checkDelimiter(*(reader +1)))
+      return reader;
+    ++reader;
+  }
+  
+  return reader;
+}
+
+
+const char* Tokenizador::okURL()
+{
+  //TODO: make this
+}
+
+
+const char* Tokenizador::okEmail()
+{
+}
+
+
+const char* Tokenizador::okAcronym()
+{
+}
+
+const char* Tokenizador::okDecimal()
+{
 }
 
 
