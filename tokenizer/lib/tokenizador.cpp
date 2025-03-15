@@ -5,7 +5,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-//TODO: don't include this when possible
+//TODO: uninclude include this when possible
 #include<fstream>
 
 
@@ -146,12 +146,58 @@ void io_context::swap(io_context& ioc)
 }
 
 
+extern inline bool iso_8859_1_bitvec::check(const uint8_t delim_idx) const
+{
+  return static_cast<bool>((this->data[delim_idx >> 3] >> (delim_idx & 0b111)) & 1);
+}
+
+
+void iso_8859_1_bitvec::set(const uint8_t delim_idx, const bool val)
+{
+  if(val)
+    this->data[delim_idx >> 3] = this->data[delim_idx >> 3] | (1 << (static_cast<uint8_t>(delim_idx) & 0b111));
+  else
+    this->data[delim_idx >> 3] = this->data[delim_idx >> 3] & (0xff - (1 << (static_cast<uint8_t>(delim_idx) & 0b111)));
+}
+
+
+void iso_8859_1_bitvec::reset()
+{
+  int64_t* d = reinterpret_cast<int64_t*>(data);
+  const int64_t* end = reinterpret_cast<int64_t*>(data) + AMD64_REGISTER_VEC_SIZE;
+  while(d < end)
+  {
+    *d = 0;
+    ++d;
+  }
+}
+
+
+void iso_8859_1_bitvec::copy_from(const iso_8859_1_bitvec& delim)
+{
+  memory_pool::mv(delim.data, this->data, DELIMITER_BIT_VEC_SIZE);
+}
+
+
+void iso_8859_1_bitvec::copy_from(const string& delim_str)
+{
+  for(auto reader = delim_str.cbegin(); reader != delim_str.cend(); reader++)
+    this->set(*reader, true);
+}
+
+
+void iso_8859_1_bitvec::copy_to(iso_8859_1_bitvec& dst) const
+{
+  memory_pool::mv(this->data, dst.data, DELIMITER_BIT_VEC_SIZE);
+}
+
+
 ostream& operator<<(ostream& os, const Tokenizador& tk)
 {
   cout << "DELIMITADORES: ";
   for(uint8_t i=0;; ++i)
   {
-    if(tk.checkDelimiter(i))
+    if(tk.delimiters.check(i))
     {
       cout << (char)i;
       /*
@@ -189,14 +235,14 @@ Tokenizador::Tokenizador(const string& delimitadoresPalabra, const bool casosEsp
 {
   loader = {0};
   constructionLogic();
-  copyDelimitersFromString(delimitadoresPalabra);
+  delimiters.copy_from(delimitadoresPalabra);
 }
 
 
 Tokenizador::Tokenizador(const Tokenizador& tk) : casosEspeciales(tk.casosEspeciales), pasarAminuscSinAcentos(tk.pasarAminuscSinAcentos)
 {
   constructionLogic();
-  copyDelimiters(tk.delimitadoresPalabra);
+  delimiters.copy_from(tk.delimiters);
   loader = {0};
 }
 
@@ -208,7 +254,7 @@ Tokenizador::Tokenizador() : casosEspeciales(true), pasarAminuscSinAcentos(false
   constructionLogic();
   while(*i != '\0')
   {
-    setDelimiter(*i, true);
+    delimiters.set(*i, true);
     ++i;
   }
   loader = {0};
@@ -217,7 +263,7 @@ Tokenizador::Tokenizador() : casosEspeciales(true), pasarAminuscSinAcentos(false
 
 Tokenizador::~Tokenizador()
 {
-  resetDelimiters();
+  delimiters.reset();
   loader.terminate();
 }
 
@@ -226,7 +272,7 @@ Tokenizador& Tokenizador::operator=(const Tokenizador& tk)
 {
   casosEspeciales = tk.casosEspeciales;
   pasarAminuscSinAcentos = tk.pasarAminuscSinAcentos;
-  copyDelimiters(tk.delimitadoresPalabra);
+  delimiters.copy_from(tk.delimiters);
   loader.terminate();
   return *this;
 }
@@ -309,14 +355,14 @@ bool Tokenizador::TokenizarDirectorio(const string& dirAIndexar)
 
 void Tokenizador::DelimitadoresPalabra(const string& nuevoDelimiters)
 {
-  resetDelimiters();
-  copyDelimitersFromString(nuevoDelimiters);
+  delimiters.reset();
+  delimiters.copy_from(nuevoDelimiters);
 } 
 
 
 void Tokenizador::AnyadirDelimitadoresPalabra(const string& nuevoDelimiters)
 {
-  copyDelimitersFromString(nuevoDelimiters);
+  delimiters.copy_from(nuevoDelimiters);
 }
 
 
@@ -326,7 +372,7 @@ string Tokenizador::DelimitadoresPalabra() const
   result.reserve(ISO_8859_SIZE);
   for(uint8_t i=0; i < ISO_8859_SIZE; ++i)
   {
-    if(checkDelimiter(static_cast<char>(i)))
+    if(delimiters.check(static_cast<char>(i)))
       result.push_back(static_cast<char>(i));
   }
 
@@ -357,52 +403,6 @@ void Tokenizador::PasarAminuscSinAcentos(const bool nuevoPasarAminuscSinAcentos)
 bool Tokenizador::PasarAminuscSinAcentos() const
 {
   return pasarAminuscSinAcentos;
-}
-
-
-extern inline bool Tokenizador::checkDelimiter(const uint8_t delim_idx) const
-{
-  return static_cast<bool>((this->delimitadoresPalabra[delim_idx >> 3] >> (delim_idx & 0b111)) & 1);
-}
-
-
-void Tokenizador::setDelimiter(const uint8_t delim_idx, const bool val)
-{
-  if(val)
-    this->delimitadoresPalabra[delim_idx >> 3] = this->delimitadoresPalabra[delim_idx >> 3] | (1 << (static_cast<uint8_t>(delim_idx) & 0b111));
-  else
-    this->delimitadoresPalabra[delim_idx >> 3] = this->delimitadoresPalabra[delim_idx >> 3] & (0xff - (1 << (static_cast<uint8_t>(delim_idx) & 0b111)));
-}
-
-
-void Tokenizador::resetDelimiters()
-{
-  int64_t* d = reinterpret_cast<int64_t*>(delimitadoresPalabra);
-  const int64_t* end = reinterpret_cast<int64_t*>(delimitadoresPalabra) + AMD64_REGISTER_VEC_SIZE;
-  while(d < end)
-  {
-    *d = 0;
-    ++d;
-  }
-}
-
-
-void Tokenizador::copyDelimiters(const uint8_t* delim)
-{
-  memory_pool::mv(delim, delimitadoresPalabra, DELIMITER_BIT_VEC_SIZE);
-}
-
-
-void Tokenizador::copyDelimitersFromString(const string& delimitadoresPalabra)
-{
-  for(auto reader = delimitadoresPalabra.cbegin(); reader != delimitadoresPalabra.cend(); reader++)
-    setDelimiter(*reader, true);
-}
-
-
-void Tokenizador::exportDelimiters(uint8_t* dst)
-{
-  memory_pool::mv(delimitadoresPalabra, dst, DELIMITER_BIT_VEC_SIZE);
 }
 
 
@@ -452,8 +452,8 @@ void Tokenizador::putTerminatingChar(const char c)
 
 void Tokenizador::skipDelimiters(const bool leaveLastOne)
 {
-  if(!checkDelimiter(*ioctx.rd_current)) return;
-  while(ioctx.rd_current < ioctx.rdend && checkDelimiter(*ioctx.rd_current))
+  if(!delimiters.check(*ioctx.rd_current)) return;
+  while(ioctx.rd_current < ioctx.rdend && delimiters.check(*ioctx.rd_current))
     ++ioctx.rd_current;
 
   if(leaveLastOne)
@@ -464,7 +464,7 @@ void Tokenizador::skipDelimiters(const bool leaveLastOne)
 const char* Tokenizador::extractCommonCaseToken(const char last)
 {
   skipDelimiters(false);
-  while(ioctx.rd_current < ioctx.rdend && !checkDelimiter(*ioctx.rd_current))
+  while(ioctx.rd_current < ioctx.rdend && !delimiters.check(*ioctx.rd_current))
   {
     (this->*writeChar)();
   }
@@ -541,26 +541,26 @@ char Tokenizador::minWithoutAccent(const char c)
 }
 
 
-const char* Tokenizador::okMuliword()
+const char* Tokenizador::multiwordTill()
 {
   const char* reader = ioctx.rd_current;
-  if(!checkDelimiter('-') || checkDelimiter(*reader))
+  if(!delimiters.check('-') || delimiters.check(*reader))
     return nullptr;
 
-  while(reader < ioctx.rdend && !checkDelimiter(*reader))
+  while(reader < ioctx.rdend && !delimiters.check(*reader))
     ++reader;
-  if(reader == ioctx.rdend || *reader != '-' || reader +1 == ioctx.rdend || checkDelimiter(*(reader +1)))
+  if(reader == ioctx.rdend || *reader != '-' || reader +1 == ioctx.rdend || delimiters.check(*(reader +1)))
     return nullptr;
 
   reader += 2;
   while(reader < ioctx.rdend)
   {
     // hyphen allowed
-    while(reader < ioctx.rdend && !checkDelimiter(*reader))
+    while(reader < ioctx.rdend && !delimiters.check(*reader))
       ++reader;
 
     // no hyphen means end delimiter
-    if(reader == ioctx.rdend || *reader != '-' || reader +1 == ioctx.rdend || checkDelimiter(*(reader +1)))
+    if(reader == ioctx.rdend || *reader != '-' || reader +1 == ioctx.rdend || delimiters.check(*(reader +1)))
       return reader;
     ++reader;
   }
@@ -569,32 +569,51 @@ const char* Tokenizador::okMuliword()
 }
 
 
-const char* Tokenizador::okURL()
+//TODO: make url_delim constexpr
+const char* Tokenizador::urlTill()
 {
-  //TODO: make this
+  const char* reader = ioctx.rd_current;
+  iso_8859_1_bitvec url_delim;
+  url_delim.reset();
+  url_delim.copy_from("_:/.?&-=#@");
+
+  if(
+    reader +4 >= ioctx.rdend 
+    || (!url_delimiters.check(*(reader +4)) && delimiters.check(*(reader +4)))
+    || !((*reader == 'f' && *(reader +1) == 't' && *(reader +2) == 'p' && *(reader +3) == ':')
+      || (*reader == 'h' && *(reader +1) == 't' && *(reader +2) == 't' && *(reader +3) == 'p')))
+  {
+    return nullptr;
+  }
+  reader += 4;
+
+  if(*reader == 's' && *(reader +1) == ':')
+    reader += 2;
+
+  //TODO: check for rorrect url_delimiters and non delimiters
 }
 
 
-const char* Tokenizador::okEmail()
+const char* Tokenizador::emailTill()
 {
 }
 
 
-const char* Tokenizador::okAcronym()
+const char* Tokenizador::acronymTill()
 {
 }
 
-const char* Tokenizador::okDecimal()
+const char* Tokenizador::decimalTill()
 {
 }
 
 
 extern inline void Tokenizador::constructionLogic()
 {
-  resetDelimiters();
-  setDelimiter(0x20 /*empty space*/, true);
-  setDelimiter('\0', true);
-  setDelimiter('\n', true);
+  delimiters.reset();
+  delimiters.set(0x20 /*empty space*/, true);
+  delimiters.set('\0', true);
+  delimiters.set('\n', true);
   ioctx.rdbegin = nullptr;
   ioctx.wrbegin = nullptr;
   writeChar = &Tokenizador::rawWrite;

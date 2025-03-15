@@ -56,6 +56,18 @@ struct io_context {
 };
 
 
+struct iso_8859_1_bitvec {
+  uint8_t data[DELIMITER_BIT_VEC_SIZE];
+
+  bool check(const uint8_t) const;
+  void set(uint8_t, bool);
+  void reset();
+  void copy_from(const iso_8859_1_bitvec&);
+  void copy_from(const string&);
+  void copy_to(iso_8859_1_bitvec&) const; // Translates exportDelimiters calls
+};
+
+
 class Tokenizador
 {
   friend ostream& operator<<(ostream&, const Tokenizador&);
@@ -126,7 +138,8 @@ private:
   using charnormalize_function = char (Tokenizador::*)(const char);
   using tkextract_function = const char* (Tokenizador::*)(const char);
 
-  uint8_t delimitadoresPalabra[DELIMITER_BIT_VEC_SIZE];
+  uint8_t delimitadoresPalabra[DELIMITER_BIT_VEC_SIZE]; //TODO: change delimitadoresPalabra calls
+  iso_8859_1_bitvec delimiters;
   bool casosEspeciales;
   bool pasarAminuscSinAcentos;
   file_loader loader;
@@ -136,12 +149,6 @@ private:
   charwrite_function writeChar;
   charnormalize_function normalizeChar;
 
-  bool checkDelimiter(uint8_t) const;
-  void setDelimiter(uint8_t, bool);
-  void resetDelimiters();
-  void copyDelimiters(const uint8_t*);
-  void copyDelimitersFromString(const string&);
-  void exportDelimiters(uint8_t*);
   void ensureOutfileHasEnoughMem();
   void setMemPool();
   void unsetMemPool();
@@ -161,11 +168,11 @@ private:
   char minWithoutAccent(const char);
 
   // Special case detection functions
-  const char* multiwordEndsAt();
-  const char* urlEndsAt();
-  const char* emailEndsAt();
-  const char* acronymEndsAt();
-  const char* decimalEndsAt();
+  const char* multiwordTill();
+  const char* urlTill();
+  const char* emailTill();
+  const char* acronymTill();
+  const char* decimalTill();
 
   void constructionLogic();
 };
