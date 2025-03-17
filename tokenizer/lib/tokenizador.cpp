@@ -406,7 +406,7 @@ bool Tokenizador::PasarAminuscSinAcentos() const
 }
 
 
-//TODO: change this to loader.truncate_outfile_mem(ioctx) or ioctx.ensure_outfile_mem(file_loader)
+//TODO: change this to loader.makeiowr_safe(ioctx) or ioctx.ensure_outfile_mem(file_loader)
 //TODO: consider adding an object reference to some of the structs
 extern inline void Tokenizador::ensureOutfileHasEnoughMem()
 {
@@ -463,7 +463,7 @@ void Tokenizador::skipDelimiters(const bool leaveLastOne)
 
 bool Tokenizador::isNumeric(const char c) const
 {
-  return static_cast<uint8_t>(*reader) >= Tokenizador::NUMERIC_START_POINT && static_cast<uint8_t>(*reader) <= Tokenizador::NUMERIC_END_POINT;
+  return static_cast<uint8_t>(c) >= Tokenizador::NUMERIC_START_POINT && static_cast<uint8_t>(c) <= Tokenizador::NUMERIC_END_POINT;
 }
 
 
@@ -487,19 +487,26 @@ const char* Tokenizador::extractSpecialCaseToken(const char last)
   const char *const ini_wrptr = ioctx.wr_current;
   const char* tk_end;
 
-  //TODO: detect urls before emails (they don't start by delimiter) URL is supposed to be the first case to detect
-  //TODO: may delete this because cases have specific delimiters
-  if(delimiters.check(*ioctx.rd_current))
+  tk_end = decimalTill();
+  if(tk_end)
   {
-    // Can start with delimiter
-    // TODO: on numbers, remember to writeChar the extra 0 if is decimal beginning with . or ,
+    if(*ioctx.rd_current == ',' || *ioctx.rd_current == '.')
+    {
+      putTerminatingChar('0');
+      --ioctx.rd_current; // Advances the rdptr so make it stay
+    }
   }
   else
   {
-    //TODO: nothing, email just keeps requisites ok and so the last at_sign email that works
-    // Cannot start with delimiters
+    ++ioctx.rd_current; // Pass delimiter
+    tk_end = multiwordTill();
+    if(!tk_end)
+      tk_end = urlTill();
+    if(!tk_end)
+      tk_end = emailTill();
+    if(!tk_end)
+      tk_end = acronymTill();
   }
-  ++ioctx.rd_current; // Or += the found pointer
 
   if(!tk_end)
     return extractCommonCaseToken(last);
@@ -607,7 +614,7 @@ const char* Tokenizador::urlTill()
 
   if(
     reader +4 >= ioctx.rdend 
-    || (!url_delimiters.check(*(reader +4)) && delimiters.check(*(reader +4)))
+    || (!url_delim.check(*(reader +4)) && delimiters.check(*(reader +4)))
     || !(
       ((this->*normalizeChar)(*reader) == 'f' 
        && (this->*normalizeChar)(*(reader +1)) == 't' 
@@ -624,13 +631,13 @@ const char* Tokenizador::urlTill()
 
   if((this->*normalizeChar)(*reader) == 's' && *(reader +1) == ':')
     reader += 2;
-  if(!(url_delimiters.check(*reader) || !delimiters.check(*reader)))
+  if(!(url_delim.check(*reader) || !delimiters.check(*reader)))
     return nullptr;
   ++reader;
 
   while(reader < ioctx.rdend)
   {
-    if(delimiters.check(*reader) && !url_delimiters.check(*reader))
+    if(delimiters.check(*reader) && !url_delim.check(*reader))
       return reader;
     ++reader;
   }
@@ -645,7 +652,7 @@ const char* Tokenizador::emailTill()
     return nullptr;
 
   const char* reader = ioctx.rd_current;
-  bool found_at_sign; = false;
+  bool found_at_sign = false;
 
   while(reader < ioctx.rdend && !found_at_sign)
   {
@@ -709,9 +716,12 @@ const char* Tokenizador::decimalTill()
   if(!(delimiters.check('.') && delimiters.check(',')))
     return nullptr;
   const char* reader = ioctx.rd_current;
-  const char* dot = nullptr;
-  if(*reader == '.' || *reader == ',')
+  const char *dot = nullptr, *comma = nullptr;
+
+  if(*reader == '.')
     dot = reader;
+  else if(*reader == ',')
+    comma = reader;
   else
     ++ioctx.rd_current;
   ++reader;
@@ -724,29 +734,32 @@ const char* Tokenizador::decimalTill()
   // Guaranteed at least one numeric char
   while(reader < ioctx.rdend)
   {
-    if(*reader == '.' || *reader == ',')
+    if(*reader == '.')
     {
       if(dot) return nullptr;
-      else dot = reader;
+      dot = reader;
+    }
+    if(*reader == ',')
+    {
+      if(comma) return nullptr;
+      comma = reader;
+      if(dot && comma > dot) return comma;
     }
     else if(delimiters.check(*reader))
     {
       if(*(reader -1) == '.' || *(reader -1) == ',') // Cut the point if useless
         --reader;
+      if(dot && comma && comma > dot) return comma;
       return reader;
     }
     else if(!isNumeric(*reader))
     {
-      //TODO: percent + dollar
-      if(!dot) return nullptr;
-      else return dot;
+      if(!(dot || comma)) return nullptr;
+      return reader;
     }
+    ++reader;
   }
   return reader;
-  // 1. Si es segundo punto o coma -> nullptr
-  // 2. Si hay delimitador, cortas
-  // 3. Si no es numérico (!dot -> nullptr, dot -> cortas donde el punto
-  // I take the guarantee that I have ONE delimiter and next will be non-delimiter
 }
 
 
