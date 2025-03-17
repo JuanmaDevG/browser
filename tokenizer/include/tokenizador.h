@@ -64,7 +64,7 @@ struct iso_8859_1_bitvec {
   void reset();
   void copy_from(const iso_8859_1_bitvec&);
   void copy_from(const string&);
-  void copy_to(iso_8859_1_bitvec&) const; // Translates exportDelimiters calls
+  void copy_to(iso_8859_1_bitvec&) const;
 };
 
 
@@ -113,6 +113,9 @@ private:
   static const int16_t ACCENT_REMOVAL_VEC_SIZE = ISO_8859_SIZE - ACCENT_START_POINT;
   static const int16_t TOLOWER_OFFSET = 0x20;
 
+  static const uint8_t NUMERIC_START_POINT = 0x30;
+  static const uint8_t NUMERIC_END_POINT = 0x39;
+
   static constexpr int16_t accentRemovalOffsetVec[ACCENT_REMOVAL_VEC_SIZE] = {
     -0x5f, -0x60, -0x61, -0x62, -0x63, -0x64,       // acctented A -> a
     0x0, 0x0,                                       // weird AE, c trencada
@@ -138,7 +141,7 @@ private:
   using charnormalize_function = char (Tokenizador::*)(const char);
   using tkextract_function = const char* (Tokenizador::*)(const char);
 
-  uint8_t delimitadoresPalabra[DELIMITER_BIT_VEC_SIZE]; //TODO: change delimitadoresPalabra calls
+  uint8_t delimitadoresPalabra[DELIMITER_BIT_VEC_SIZE];
   iso_8859_1_bitvec delimiters;
   bool casosEspeciales;
   bool pasarAminuscSinAcentos;
@@ -154,6 +157,7 @@ private:
   void unsetMemPool();
   void putTerminatingChar(const char);
   void skipDelimiters(const bool leaveLastOne);
+  bool isNumeric(const char) const;
 
   // Values for extractToken
   const char* extractCommonCaseToken(const char last_char);

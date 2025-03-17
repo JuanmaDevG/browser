@@ -461,8 +461,15 @@ void Tokenizador::skipDelimiters(const bool leaveLastOne)
 }
 
 
+bool Tokenizador::isNumeric(const char c) const
+{
+  return static_cast<uint8_t>(*reader) >= Tokenizador::NUMERIC_START_POINT && static_cast<uint8_t>(*reader) <= Tokenizador::NUMERIC_END_POINT;
+}
+
+
 const char* Tokenizador::extractCommonCaseToken(const char last)
 {
+  const char *const ini_wrptr = ioctx.wr_current;
   skipDelimiters(false);
   while(ioctx.rd_current < ioctx.rdend && !delimiters.check(*ioctx.rd_current))
   {
@@ -470,18 +477,38 @@ const char* Tokenizador::extractCommonCaseToken(const char last)
   }
 
   putTerminatingChar(last);
-  return ioctx.wrbegin;
+  return ini_wrptr;
 }
 
 
 const char* Tokenizador::extractSpecialCaseToken(const char last)
 {
   skipDelimiters(true);
-  //TODO: first words that can afford starting with delimiters (but if not starting with, skip delimiter and continue analysis)
-  // Then words that don't start with delimiters for sure
-  const char* word_end = nullptr;
+  const char *const ini_wrptr = ioctx.wr_current;
+  const char* tk_end;
 
-  return ioctx.wrbegin;
+  //TODO: detect urls before emails (they don't start by delimiter) URL is supposed to be the first case to detect
+  //TODO: may delete this because cases have specific delimiters
+  if(delimiters.check(*ioctx.rd_current))
+  {
+    // Can start with delimiter
+    // TODO: on numbers, remember to writeChar the extra 0 if is decimal beginning with . or ,
+  }
+  else
+  {
+    //TODO: nothing, email just keeps requisites ok and so the last at_sign email that works
+    // Cannot start with delimiters
+  }
+  ++ioctx.rd_current; // Or += the found pointer
+
+  if(!tk_end)
+    return extractCommonCaseToken(last);
+
+  while(ioctx.rd_current < tk_end)
+    (this->*writeChar)();
+  putTerminatingChar(last);
+
+  return ini_wrptr;
 }
 
 
@@ -541,6 +568,7 @@ char Tokenizador::minWithoutAccent(const char c)
 }
 
 
+//TODO: ask the teacher if an accented or capital leter can be delimiter (¿getChar() everywhere?)
 const char* Tokenizador::multiwordTill()
 {
   const char* reader = ioctx.rd_current;
@@ -580,31 +608,145 @@ const char* Tokenizador::urlTill()
   if(
     reader +4 >= ioctx.rdend 
     || (!url_delimiters.check(*(reader +4)) && delimiters.check(*(reader +4)))
-    || !((*reader == 'f' && *(reader +1) == 't' && *(reader +2) == 'p' && *(reader +3) == ':')
-      || (*reader == 'h' && *(reader +1) == 't' && *(reader +2) == 't' && *(reader +3) == 'p')))
+    || !(
+      ((this->*normalizeChar)(*reader) == 'f' 
+       && (this->*normalizeChar)(*(reader +1)) == 't' 
+       && (this->*normalizeChar)(*(reader +2)) == 'p' 
+       && *(reader +3) == ':')
+      || ((this->*normalizeChar)(*reader) == 'h' 
+        && (this->*normalizeChar)(*(reader +1)) == 't' 
+        && (this->*normalizeChar)(*(reader +2)) == 't' 
+        && (this->*normalizeChar)(*(reader +3)) == 'p')))
   {
     return nullptr;
   }
   reader += 4;
 
-  if(*reader == 's' && *(reader +1) == ':')
+  if((this->*normalizeChar)(*reader) == 's' && *(reader +1) == ':')
     reader += 2;
+  if(!(url_delimiters.check(*reader) || !delimiters.check(*reader)))
+    return nullptr;
+  ++reader;
 
-  //TODO: check for rorrect url_delimiters and non delimiters
+  while(reader < ioctx.rdend)
+  {
+    if(delimiters.check(*reader) && !url_delimiters.check(*reader))
+      return reader;
+    ++reader;
+  }
+
+  return reader;
 }
 
 
 const char* Tokenizador::emailTill()
 {
+  if(!delimiters.check('@') || *ioctx.rd_current == '@')
+    return nullptr;
+
+  const char* reader = ioctx.rd_current;
+  bool found_at_sign; = false;
+
+  while(reader < ioctx.rdend && !found_at_sign)
+  {
+    if(*reader == '@')
+    {
+      found_at_sign = true;
+      ++reader;
+      continue;
+    }
+    if(delimiters.check(*reader))
+      return nullptr;
+
+    ++reader;
+  }
+  if(!found_at_sign)
+    return nullptr;
+
+  iso_8859_1_bitvec sufix_delimiters; //TODO: make constexpr when possible
+  sufix_delimiters.reset();
+  sufix_delimiters.copy_from(".-_");
+  while(reader < ioctx.rdend)
+  {
+    if(*reader == '@')
+      return nullptr; // Not allowed second @
+    if(
+        sufix_delimiters.check(*reader) 
+        && (delimiters.check(*(reader -1)) || reader +1 == ioctx.rdend || delimiters.check(*(reader +1))))
+    {
+      return nullptr;
+    }
+    else if(delimiters.check(*reader))
+      return reader;
+
+    ++reader;
+  }
+  return reader;
 }
 
 
 const char* Tokenizador::acronymTill()
 {
+  if(!delimiters.check('.'))
+    return nullptr;
+
+  const char* reader = ioctx.rd_current;
+  while(reader < ioctx.rdend)
+  {
+    if(
+        *reader == '.' && (reader +1 == ioctx.rdend || delimiters.check(*(reader +1)))
+        || *reader != '.' && delimiters.check(*reader))
+    {
+      return reader;
+    }
+    ++reader;
+  }
+  return reader;
 }
 
 const char* Tokenizador::decimalTill()
 {
+  if(!(delimiters.check('.') && delimiters.check(',')))
+    return nullptr;
+  const char* reader = ioctx.rd_current;
+  const char* dot = nullptr;
+  if(*reader == '.' || *reader == ',')
+    dot = reader;
+  else
+    ++ioctx.rd_current;
+  ++reader;
+
+  if(!isNumeric(*reader))
+    return nullptr;
+  else
+    ++reader;
+
+  // Guaranteed at least one numeric char
+  while(reader < ioctx.rdend)
+  {
+    if(*reader == '.' || *reader == ',')
+    {
+      if(dot) return nullptr;
+      else dot = reader;
+    }
+    else if(delimiters.check(*reader))
+    {
+      if(*(reader -1) == '.' || *(reader -1) == ',') // Cut the point if useless
+        --reader;
+      return reader;
+    }
+    else if(!isNumeric(*reader))
+    {
+      //TODO: percent + dollar
+      if(!dot) return nullptr;
+      else return dot;
+    }
+  }
+  return reader;
+  // 1. Si es segundo punto o coma -> nullptr
+  // 2. Si hay delimitador, cortas
+  // 3. Si no es numérico (!dot -> nullptr, dot -> cortas donde el punto
+  // I take the guarantee that I have ONE delimiter and next will be non-delimiter
 }
 
 
