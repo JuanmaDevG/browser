@@ -179,4 +179,6 @@ private:
   const char* decimalTill();
 
   void constructionLogic();
+  void defaultDelimiters();
+  void specialDelimiters();
 };

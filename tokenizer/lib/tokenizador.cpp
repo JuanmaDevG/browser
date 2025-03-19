@@ -291,7 +291,8 @@ void Tokenizador::Tokenizar(const string& str, list<string>& tokens)
   {
     ioctx.wr_current = ioctx.wrbegin;
     tk = (this->*extractToken)('\0');
-    tokens.push_back(tk);
+    if(*tk != '\0') // empty string is nothing being written
+      tokens.push_back(tk);
   }
   unsetMemPool();
 }
@@ -343,7 +344,7 @@ bool Tokenizador::TokenizarDirectorio(const string& dirAIndexar)
 {
   struct stat dir;
   int err = stat(dirAIndexar.c_str(), &dir);
-  if(err == -1 || S_ISDIR(dir.st_mode))
+  if(err == -1 || !S_ISDIR(dir.st_mode))
     return false;
   else {
     string cmd = "find " + dirAIndexar + " -follow | sort > .lista_fich";
@@ -355,7 +356,7 @@ bool Tokenizador::TokenizarDirectorio(const string& dirAIndexar)
 
 void Tokenizador::DelimitadoresPalabra(const string& nuevoDelimiters)
 {
-  delimiters.reset();
+  defaultDelimiters();
   delimiters.copy_from(nuevoDelimiters);
 } 
 
@@ -370,7 +371,7 @@ string Tokenizador::DelimitadoresPalabra() const
 {
   string result;
   result.reserve(ISO_8859_SIZE);
-  for(uint8_t i=0; i < ISO_8859_SIZE; ++i)
+  for(uint8_t i=0; i < ISO_8859_SIZE -1; ++i)
   {
     if(delimiters.check(static_cast<char>(i)))
       result.push_back(static_cast<char>(i));
@@ -384,6 +385,7 @@ void Tokenizador::CasosEspeciales(const bool nuevoCasosEspeciales)
 {
   casosEspeciales = nuevoCasosEspeciales;
   extractToken = (casosEspeciales ? &Tokenizador::extractSpecialCaseToken : &Tokenizador::extractCommonCaseToken);
+  specialDelimiters();
 }
 
 
@@ -471,6 +473,11 @@ const char* Tokenizador::extractCommonCaseToken(const char last)
 {
   const char *const ini_wrptr = ioctx.wr_current;
   skipDelimiters(false);
+  if(ioctx.rd_current == ioctx.rdend)
+  {
+    *ioctx.wr_current = '\0';
+    return ini_wrptr;
+  }
   while(ioctx.rd_current < ioctx.rdend && !delimiters.check(*ioctx.rd_current))
   {
     (this->*writeChar)();
@@ -493,12 +500,14 @@ const char* Tokenizador::extractSpecialCaseToken(const char last)
     if(*ioctx.rd_current == ',' || *ioctx.rd_current == '.')
     {
       putTerminatingChar('0');
-      --ioctx.rd_current; // Advances the rdptr so make it stay
+      --ioctx.rd_current; // make rdptr stay the same
     }
   }
   else
   {
-    ++ioctx.rd_current; // Pass delimiter
+    if(delimiters.check(*ioctx.rd_current))
+      ++ioctx.rd_current; // Pass delimiter
+
     tk_end = multiwordTill();
     if(!tk_end)
       tk_end = urlTill();
@@ -565,13 +574,13 @@ extern inline char Tokenizador::rawCharReturn(const char c)
 
 char Tokenizador::minWithoutAccent(const char c)
 {
-  int16_t curChar = static_cast<int16_t>(c);
+  int16_t curChar = (int16_t)(uint8_t)c;
   if(curChar >= CAPITAL_START_POINT && curChar <= CAPITAL_END_POINT)
     curChar += Tokenizador::TOLOWER_OFFSET;
   else if(curChar - ACCENT_START_POINT >= 0)
     curChar += Tokenizador::accentRemovalOffsetVec[curChar - ACCENT_START_POINT];
 
-  return static_cast<char>(curChar);
+  return (char)curChar;
 }
 
 
@@ -623,18 +632,20 @@ const char* Tokenizador::urlTill()
       || ((this->*normalizeChar)(*reader) == 'h' 
         && (this->*normalizeChar)(*(reader +1)) == 't' 
         && (this->*normalizeChar)(*(reader +2)) == 't' 
-        && (this->*normalizeChar)(*(reader +3)) == 'p')))
+        && (this->*normalizeChar)(*(reader +3)) == 'p'
+        && (*(reader +4) == ':'
+          || (*(reader +4) == 's' && reader +5 < ioctx.rdend && *(reader +5) == ':')))))
   {
     return nullptr;
   }
-  reader += 4;
+  else reader += 4;
 
-  if((this->*normalizeChar)(*reader) == 's' && *(reader +1) == ':')
-    reader += 2;
-  if(!(url_delim.check(*reader) || !delimiters.check(*reader)))
+  // The reader must point to ':'
+  if(*(reader -1) == ':') --reader;
+  else if((this->*normalizeChar)(*reader) == 's') ++reader;
+
+  if(reader +1 >= ioctx.rdend || (delimiters.check(*(reader +1)) && !url_delim.check(*(reader +1))))
     return nullptr;
-  ++reader;
-
   while(reader < ioctx.rdend)
   {
     if(delimiters.check(*reader) && !url_delim.check(*reader))
@@ -677,11 +688,10 @@ const char* Tokenizador::emailTill()
   {
     if(*reader == '@')
       return nullptr; // Not allowed second @
-    if(
-        sufix_delimiters.check(*reader) 
-        && (delimiters.check(*(reader -1)) || reader +1 == ioctx.rdend || delimiters.check(*(reader +1))))
+    if(sufix_delimiters.check(*reader)) 
     {
-      return nullptr;
+      if(delimiters.check(*(reader -1)) || reader +1 == ioctx.rdend || delimiters.check(*(reader +1)))
+        return nullptr;
     }
     else if(delimiters.check(*reader))
       return reader;
@@ -719,43 +729,44 @@ const char* Tokenizador::decimalTill()
   const char *dot = nullptr, *comma = nullptr;
 
   if(*reader == '.')
+  {
     dot = reader;
+    ++reader;
+  }
   else if(*reader == ',')
+  {
     comma = reader;
-  else
-    ++ioctx.rd_current;
-  ++reader;
+    ++reader;
+  }
 
   if(!isNumeric(*reader))
     return nullptr;
-  else
-    ++reader;
+  else ++reader;
 
   // Guaranteed at least one numeric char
   while(reader < ioctx.rdend)
   {
     if(*reader == '.')
     {
-      if(dot) return nullptr;
       dot = reader;
+      if(comma && dot && comma == dot -1) return comma;
+      if(reader +1 == ioctx.rdend) return reader;
     }
-    if(*reader == ',')
+    else if(*reader == ',')
     {
-      if(comma) return nullptr;
       comma = reader;
-      if(dot && comma > dot) return comma;
+      if(dot && comma && dot == comma -1) return dot;
+      if(reader +1 == ioctx.rdend) return reader;
     }
     else if(delimiters.check(*reader))
     {
-      if(*(reader -1) == '.' || *(reader -1) == ',') // Cut the point if useless
+      if(comma == reader -1 || dot == reader -1) // Cut the separator if useless
         --reader;
-      if(dot && comma && comma > dot) return comma;
       return reader;
     }
     else if(!isNumeric(*reader))
     {
-      if(!(dot || comma)) return nullptr;
-      return reader;
+      return nullptr;
     }
     ++reader;
   }
@@ -763,12 +774,9 @@ const char* Tokenizador::decimalTill()
 }
 
 
-extern inline void Tokenizador::constructionLogic()
+void Tokenizador::constructionLogic()
 {
-  delimiters.reset();
-  delimiters.set(0x20 /*empty space*/, true);
-  delimiters.set('\0', true);
-  delimiters.set('\n', true);
+  defaultDelimiters();
   ioctx.rdbegin = nullptr;
   ioctx.wrbegin = nullptr;
   writeChar = &Tokenizador::rawWrite;
@@ -782,4 +790,22 @@ extern inline void Tokenizador::constructionLogic()
     normalizeChar = &Tokenizador::minWithoutAccent;
   else
     normalizeChar = &Tokenizador::rawCharReturn;
+}
+
+
+void Tokenizador::defaultDelimiters()
+{
+  delimiters.reset();
+  delimiters.set('\0', true);
+  delimiters.set('\n', true);
+  specialDelimiters();
+}
+
+
+void Tokenizador::specialDelimiters()
+{
+  if(casosEspeciales)
+    delimiters.set(0x20 /*empty space*/, true);
+  else
+    delimiters.set(0x20, false);
 }

@@ -33,5 +33,7 @@
 
 # Tokenizer trash
 *.lista_fich
-target/
 *.tmp
+*.tk
+practica1
+corrigeUno.res
