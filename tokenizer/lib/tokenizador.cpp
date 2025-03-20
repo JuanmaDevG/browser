@@ -4,6 +4,9 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <sys/types.h>
+#include <dirent.h>
+#include <cstring>
 
 //TODO: uninclude include this when possible
 #include<fstream>
@@ -22,7 +25,7 @@ bool file_loader::begin(const char* filename, const char* output_filename = null
   inbuf_size = in_fileinfo.st_size;
 
   if(!output_filename) return true;
-  fd = open(output_filename, O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR);
+  fd = open(output_filename, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR);
   if(fd < 0)
   {
     munmap(const_cast<char*>(inbuf), in_fileinfo.st_size);
@@ -31,6 +34,14 @@ bool file_loader::begin(const char* filename, const char* output_filename = null
   }
   ftruncate(fd, in_fileinfo.st_size);
   outbuf = (char*)mmap(nullptr, in_fileinfo.st_size, PROT_WRITE, MAP_SHARED, fd, 0);
+  if(outbuf == MAP_FAILED)
+  {
+    close(fd);
+    munmap(const_cast<char*>(inbuf), inbuf_size);
+    null_readpoints();
+    null_writepoints();
+    return false;
+  }
   close(fd);
   outbuf_size = in_fileinfo.st_size;
   outbuf_filename = output_filename;
@@ -116,8 +127,8 @@ void memory_pool::mv(const void *const src, void *const dst, const size_t size)
   int64_t* writepoint = reinterpret_cast<int64_t*>(dst);
   const char *const readpoint_end = reinterpret_cast<const char *const>(src) + size;
   const char *const writepoint_end = reinterpret_cast<const char *const>(dst) + size;
-  const char* remain_readpoint = readpoint_end - (reinterpret_cast<const int64_t>(readpoint_end) & 0b111);
-  char* remain_writepoint = const_cast<char*>(writepoint_end) - (reinterpret_cast<const int64_t>(writepoint_end) & 0b111);
+  const char* remain_readpoint = readpoint_end - (size & 0b111);
+  char* remain_writepoint = const_cast<char*>(writepoint_end) - (size & 0b111);
 
   while(writepoint < reinterpret_cast<int64_t*>(remain_writepoint) && readpoint < reinterpret_cast<const int64_t*>(remain_readpoint))
   {
@@ -300,29 +311,8 @@ void Tokenizador::Tokenizar(const string& str, list<string>& tokens)
 
 bool Tokenizador::Tokenizar(const string& i, const string& f)
 {
-  if(!loader.begin(i.c_str(), f.c_str()))
-  {
-    cerr << "ERROR: No existe el archivo: " << i << endl;
-    return false;
-  }
-  //TODO: make func to bind ioctx to file_loader or memory_pool
-  ioctx.rdbegin = loader.inbuf;
-  ioctx.rd_current = ioctx.rdbegin;
-  ioctx.rdend = ioctx.rdbegin + loader.inbuf_size;
-  ioctx.wrbegin = loader.outbuf;
-  ioctx.wr_current = ioctx.wrbegin;
-  ioctx.wrend = ioctx.wrbegin + loader.outbuf_size;
-
-  const char* tk;
-  while(ioctx.rd_current < ioctx.rdend)
-  {
-    (this->*extractToken)('\n');
-    ensureOutfileHasEnoughMem();
-  }
-
-  loader.terminate(ioctx.wr_current);
-  return true;
-} 
+  return tkFile(i.c_str(), f.c_str());
+}
 
 
 bool Tokenizador::TokenizarListaFicheros(const string& i)
@@ -337,20 +327,12 @@ bool Tokenizador::TokenizarListaFicheros(const string& i)
   }
 
   return true;
-} 
+}
 
 
 bool Tokenizador::TokenizarDirectorio(const string& dirAIndexar)
 {
-  struct stat dir;
-  int err = stat(dirAIndexar.c_str(), &dir);
-  if(err == -1 || !S_ISDIR(dir.st_mode))
-    return false;
-  else {
-    string cmd = "find " + dirAIndexar + " -follow | sort > .lista_fich";
-    system(cmd.c_str());
-  }
-  return TokenizarListaFicheros(".lista_fich");
+  return tkDirectory(dirAIndexar.c_str(), dirAIndexar.length());
 }
 
 
@@ -466,6 +448,84 @@ void Tokenizador::skipDelimiters(const bool leaveLastOne)
 bool Tokenizador::isNumeric(const char c) const
 {
   return static_cast<uint8_t>(c) >= Tokenizador::NUMERIC_START_POINT && static_cast<uint8_t>(c) <= Tokenizador::NUMERIC_END_POINT;
+}
+
+
+bool Tokenizador::tkFile(const char* ifile, const char* ofile)
+{
+  if(!loader.begin(ifile, ofile))
+  {
+    cerr << "ERROR: No existe el archivo: " << ifile << endl;
+    return false;
+  }
+  //TODO: make func to bind ioctx to file_loader or memory_pool
+  ioctx.rdbegin = loader.inbuf;
+  ioctx.rd_current = ioctx.rdbegin;
+  ioctx.rdend = ioctx.rdbegin + loader.inbuf_size;
+  ioctx.wrbegin = loader.outbuf;
+  ioctx.wr_current = ioctx.wrbegin;
+  ioctx.wrend = ioctx.wrbegin + loader.outbuf_size;
+
+  const char* tk;
+  while(ioctx.rd_current < ioctx.rdend)
+  {
+    (this->*extractToken)('\n');
+    ensureOutfileHasEnoughMem();
+  }
+
+  loader.terminate(ioctx.wr_current);
+  return true;
+}
+
+
+bool Tokenizador::tkDirectory(const char* dir_name, const size_t dir_len)
+{
+  DIR* dir;
+  struct dirent* entry;
+  char* entry_name = new char[512];
+  size_t entry_len = 256;
+  if(!entry_name) return false;
+
+  if((dir = opendir(dir_name)) == nullptr)
+  {
+    delete[] entry_name;
+    return false;
+  }
+
+  size_t entry_namlen;
+  while((entry = readdir(dir)) != nullptr)
+  {
+    entry_namlen = strlen(entry->d_name);
+    if(entry->d_name[0] == '.' && (entry->d_name[1] == '\0' || (entry->d_name[1] == '.')))
+      continue;
+
+    // +2 = '/' + '\0'
+    if(dir_len + entry_namlen +2 > entry_len)
+    {
+      delete[] entry_name;
+      entry_len = dir_len + entry_namlen +2;
+      // << 1 = outfile, +3 = ".tk"
+      entry_name = new char[(entry_len << 1) +3];
+    }
+    memory_pool::mv(dir_name, entry_name, dir_len);
+    *(entry_name + dir_len) = '/';
+    memory_pool::mv(entry->d_name, entry_name + dir_len +1, entry_namlen);
+    *(entry_name + dir_len + 1 + entry_namlen) = '\0';
+
+    if(entry->d_type == DT_DIR)
+    {
+      tkDirectory(entry_name, dir_len + entry_namlen +1);
+    }
+    else
+    {
+      memory_pool::mv(entry_name, entry_name + entry_len, dir_len + entry_namlen +1);
+      memory_pool::mv(".tk", entry_name + entry_len + dir_len + entry_namlen +1, 4);
+      tkFile(entry_name, entry_name + entry_len);
+    }
+  }
+  delete[] entry_name;
+  closedir(dir);
+  return true;
 }
 
 

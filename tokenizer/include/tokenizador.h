@@ -15,6 +15,7 @@ using namespace std;
 
 struct io_context;
 
+//TODO: bind io_context functions (may add io_context pointer)
 struct file_loader {
   const char* inbuf;
   size_t inbuf_size;
@@ -27,7 +28,6 @@ struct file_loader {
   void null_readpoints();
   void null_writepoints();
   void grow_outfile(size_t how_much, io_context& bound_ioc);
-  //TODO: bind(io_context) or ibind(io_context) obind(io_context)
 };
 
 
@@ -38,7 +38,6 @@ struct memory_pool {
   void write(const void *const chunk, const size_t size, const off_t wrstart);
   void read(void *const dst, const size_t size, const off_t rdstart);
   size_t size();
-  //TODO: bind(io_context)
 
   static void mv(const void *const src, void *const dst, const size_t size);
 };
@@ -158,6 +157,8 @@ private:
   void putTerminatingChar(const char);
   void skipDelimiters(const bool leaveLastOne);
   bool isNumeric(const char) const;
+  bool tkFile(const char* ifile, const char* ofile);
+  bool tkDirectory(const char* name, const size_t len);
 
   // Values for extractToken
   const char* extractCommonCaseToken(const char last_char);
