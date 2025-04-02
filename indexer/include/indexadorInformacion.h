@@ -153,8 +153,8 @@ ostream& operator<<(ostream&, const InformacionPregunta&);
 
 ostream& operator<<(ostream& s, const InformacionTermino& p) {
   s << "Frecuencia total: " << p.ftc << "\tfd: " << p.l_docs.size();
-  // A continuación se mostrarían todos los elementos de p.l_docs: s << "\tId.Doc: " << idDoc << "\t" << InfTermDoc;
-  // TODO: print shit
+  for(auto& doc : p.l_docs)
+    s << "\tId.Doc: " << doc.first << '\t' << doc.second;
 
   return s;
 }
@@ -169,7 +169,8 @@ ostream& operator<<(ostream&, const InfColeccionDocs& p) {
 
 ostream& operator<<(ostream& s, const InformacionTerminoPregunta& p) {
   s << "ft: " << p.ft;
-  // A continuación se mostrarían todos los elementos de p.posTerm ("posicion TAB posicion TAB ... posicion, es decir nunca finalizará en un TAB"): s << "\t" << posicion;
+  for(auto i = p.posTerm.cbegin(); i != p.posTerm.cend(); i++)
+    s << '\t' << *i;
 
   return s;
 }
