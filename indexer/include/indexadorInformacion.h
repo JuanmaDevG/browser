@@ -1,80 +1,42 @@
+#pragma once
+
+#include <unordered_map>
+#include <list> //TODO: probably remove (cause of mem fragmentation)
+
+struct Fecha {
+  uint16_t aa;
+  uint8_t mm;
+  uint8_t dd;
+
+  uint8_t hour;
+  uint8_t min;
+  uint8_t seg;
+};
+
 class InfTermDoc;
-class InfDoc;
-class InformacionTermino;
-class InfColeccionDocs;
-class InformacionTerminoPregunta;
-class InformacionPregunta;
-
-ostream& operator<<(ostream&, const InformacionPregunta&);
-  s << "numTotalPal: " << p.numTotalPal << "\tnumTotalPalSinParada: "<< p.numTotalPalSinParada << "\tnumTotalPalDiferentes: " << numTotalPalDiferentes;
-
-  return s;
-}
-
-
-ostream& operator<<(ostream& s, const InfDoc& p) {
-  s << "idDoc: " << p.idDoc << "\tnumPal: " << p.numPal << "\tnumPalSinParada: " << p.numPalSinParada << "\tnumPalDiferentes: " << p.numPalDiferentes << "\ttamBytes: " << p.tamBytes;
-
-  return s;
-}
-
-
-ostream& operator<<(ostream& s, const InfTermDoc& p) {
-  s << "ft: " << p.ft;
-  // A continuación se mostrarían todos los elementos de p.posTerm ("posicion TAB posicion TAB ... posicion, es decir nunca finalizará en un TAB"): s << "\t" << posicion;
-
-  return s;
-}
-
-
-ostream& operator<<(ostream& s, const InformacionTermino& p) {
-  s << "Frecuencia total: " << p.ftc << "\tfd: " << p.l_docs.size();
-  // A continuación se mostrarían todos los elementos de p.l_docs: s << "\tId.Doc: " << idDoc << "\t" << InfTermDoc;
-
-  return s;
-}
-
-
-ostream& operator<<(ostream&, const InfColeccionDocs& p) {
-  s << "numDocs: " << p.numDocs << "\tnumTotalPal: " << p.numTotalPal << "\tnumTotalPalSinParada: " << p.numTotalPalSinParada << "\tnumTotalPalDiferentes: " << numTotalPalDiferentes << "\ttamBytes: " << p.tamBytes;
-
-  return s;
-}
-
-
-ostream& operator<<(ostream& s, const InformacionTerminoPregunta& p) {
-  s << "ft: " << p.ft;
-  // A continuación se mostrarían todos los elementos de p.posTerm ("posicion TAB posicion TAB ... posicion, es decir nunca finalizará en un TAB"): s << "\t" << posicion;
-
-  return s;
-}
-
 
 class InformacionTermino { 
   friend ostream& operator<<(ostream& s, const InformacionTermino& p);
 public:
   InformacionTermino (const InformacionTermino &);
-  InformacionTermino ();		// Inicializa ftc = 0
-  ~InformacionTermino ();		// Pone ftc = 0 y vacía l_docs
+  InformacionTermino ();
+  ~InformacionTermino ();
   InformacionTermino & operator= (const InformacionTermino &);
 
-  // Añadir cuantos métodos se consideren necesarios para manejar la parte privada de la clase
 private:
-  int ftc;	// Frecuencia total del término en la colección
+  int ftc;                                      // Frecuencia de Termino en Coleccion
   unordered_map<int, InfTermDoc> l_docs; 
-  // Tabla Hash que se accederá por el id del documento, devolviendo un objeto de la clase InfTermDoc que contiene toda la información de aparición del término en el documento
 };
 
 
-class InfTermDoc { 
+class InfTermDoc {
   friend ostream& operator<<(ostream& s, const InfTermDoc& p);
 public:
   InfTermDoc (const InfTermDoc &);
-  InfTermDoc ();		// Inicializa ft = 0
-  ~InfTermDoc ();		// Pone ft = 0 
-  InfTermDoc & operator= (const InfTermDoc &);
+  InfTermDoc ();
+  ~InfTermDoc ();
+  InfTermDoc& operator= (const InfTermDoc &);
 
-  // Añadir cuantos métodos se consideren necesarios para manejar la parte privada de la clase
 private:
   int ft;	// Frecuencia del término en el documento
   list<int> posTerm;	
@@ -160,3 +122,48 @@ private:
   int numTotalPalDiferentes;	
   // Nº total de palabras diferentes en la pregunta que no sean stop-words (sin acumular la frecuencia de cada una de ellas)
 };
+
+
+ostream& operator<<(ostream& s, const InfTermDoc& p) {
+  s << "ft: " << p.ft;
+  // A continuación se mostrarían todos los elementos de p.posTerm ("posicion TAB posicion TAB ... posicion, es decir nunca finalizará en un TAB"): s << "\t" << posicion;
+
+  return s;
+}
+
+
+ostream& operator<<(ostream& s, const InfDoc& p) {
+  s << "idDoc: " << p.idDoc << "\tnumPal: " << p.numPal << "\tnumPalSinParada: " << p.numPalSinParada << "\tnumPalDiferentes: " << p.numPalDiferentes << "\ttamBytes: " << p.tamBytes;
+
+  return s;
+}
+
+
+ostream& operator<<(ostream&, const InformacionPregunta&);
+  s << "numTotalPal: " << p.numTotalPal << "\tnumTotalPalSinParada: "<< p.numTotalPalSinParada << "\tnumTotalPalDiferentes: " << numTotalPalDiferentes;
+
+  return s;
+}
+
+
+ostream& operator<<(ostream& s, const InformacionTermino& p) {
+  s << "Frecuencia total: " << p.ftc << "\tfd: " << p.l_docs.size();
+  // A continuación se mostrarían todos los elementos de p.l_docs: s << "\tId.Doc: " << idDoc << "\t" << InfTermDoc;
+
+  return s;
+}
+
+
+ostream& operator<<(ostream&, const InfColeccionDocs& p) {
+  s << "numDocs: " << p.numDocs << "\tnumTotalPal: " << p.numTotalPal << "\tnumTotalPalSinParada: " << p.numTotalPalSinParada << "\tnumTotalPalDiferentes: " << numTotalPalDiferentes << "\ttamBytes: " << p.tamBytes;
+
+  return s;
+}
+
+
+ostream& operator<<(ostream& s, const InformacionTerminoPregunta& p) {
+  s << "ft: " << p.ft;
+  // A continuación se mostrarían todos los elementos de p.posTerm ("posicion TAB posicion TAB ... posicion, es decir nunca finalizará en un TAB"): s << "\t" << posicion;
+
+  return s;
+}
