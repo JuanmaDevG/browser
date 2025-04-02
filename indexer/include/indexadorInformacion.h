@@ -3,6 +3,8 @@
 #include <unordered_map>
 #include <list> //TODO: probably remove (cause of mem fragmentation)
 
+using namespace std;
+
 struct Fecha {
   uint16_t aa;
   uint8_t mm;
@@ -10,7 +12,9 @@ struct Fecha {
 
   uint8_t hour;
   uint8_t min;
-  uint8_t seg;
+  uint8_t sec;
+
+  Fecha& operator=(const Fecha&);
 };
 
 class InfTermDoc;
@@ -108,10 +112,10 @@ private:
 class InformacionPregunta { 
   friend ostream& operator<<(ostream& s, const InformacionPregunta& p);
 public:
-  InformacionPregunta (const InformacionPregunta &);
-  InformacionPregunta ();
-  ~InformacionPregunta ();
-  InformacionPregunta & operator= (const InformacionPregunta &);
+  InformacionPregunta(const InformacionPregunta &);
+  InformacionPregunta();
+  ~InformacionPregunta();
+  InformacionPregunta & operator=(const InformacionPregunta &);
 
   // Añadir cuantos métodos se consideren necesarios para manejar la parte privada de la clase
 private:
@@ -126,7 +130,8 @@ private:
 
 ostream& operator<<(ostream& s, const InfTermDoc& p) {
   s << "ft: " << p.ft;
-  // A continuación se mostrarían todos los elementos de p.posTerm ("posicion TAB posicion TAB ... posicion, es decir nunca finalizará en un TAB"): s << "\t" << posicion;
+  for(auto i = p.posTerm.cbegin(); i != p.posterm.cend(); i++)
+    s << '\t' << *i;
 
   return s;
 }
@@ -149,6 +154,7 @@ ostream& operator<<(ostream&, const InformacionPregunta&);
 ostream& operator<<(ostream& s, const InformacionTermino& p) {
   s << "Frecuencia total: " << p.ftc << "\tfd: " << p.l_docs.size();
   // A continuación se mostrarían todos los elementos de p.l_docs: s << "\tId.Doc: " << idDoc << "\t" << InfTermDoc;
+  // TODO: print shit
 
   return s;
 }
