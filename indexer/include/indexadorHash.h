@@ -1,6 +1,9 @@
 #pragma once
 
 #include <algorithm>
+#include <iostream>
+#include <string>
+#include "indexadorInformacion.h"
 
 using namespace std;
 
@@ -19,7 +22,7 @@ class IndexadorHash {
 
 public:
 
-    IndexadorHash(const string& fichStopWords, const string& delimitadores, const bool& detectComp, const bool& minuscSinAcentos, const string& dirIndice, const int& tStemmer, const bool& almPosTerm);
+    IndexadorHash(const string& fichStopWords, const string& delimitadores, const bool detectComp, const bool minuscSinAcentos, const string& dirIndice, const int tStemmer, const bool almPosTerm);
     // "fichStopWords" será el nombre del archivo que contendrá todas las palabras de parada (una palabra por cada línea del fichero) y se almacenará en el campo privado "ficheroStopWords". Asimismo, almacenará todas las palabras de parada que contenga el archivo en el campo privado "stopWords", el índice de palabras de parada. 
     // "delimitadores" será el string que contiene todos los delimitadores utilizados por el tokenizador (campo privado "tok")
     // detectComp y minuscSinAcentos serán los parámetros que se pasarán al tokenizador
@@ -161,47 +164,26 @@ public:
 
 private:	
     IndexadorHash();	
-    // Este constructor se pone en la parte privada porque no se permitirá crear un indexador sin inicializarlo convenientemente. La inicialización la decidirá el alumno
 
-    unordered_map<string, InformacionTermino> indice;	 
-    // Índice de términos indexados accesible por el término
-
-    unordered_map<string, InfDoc> indiceDocs;	 
-    // Índice de documentos indexados accesible por el nombre del documento
-
-
-    InfColeccionDocs informacionColeccionDocs;	
-    // Información recogida de la colección de documentos indexada
-
+    unordered_map<string, InformacionTermino> indice;
+    unordered_map<string, InfDoc> indiceDocs;
+    InfColeccionDocs informacionColeccionDocs;
     string pregunta;
-    // Pregunta indexada actualmente. Si no hay ninguna indexada, contendría el valor ""
-
-    unordered_map<string, InformacionTerminoPregunta> indicePregunta;	 
-    // Índice de términos indexados en una pregunta
-
-    InformacionPregunta infPregunta;	
-    // Información recogida de la pregunta indexada
-
+    unordered_map<string, InformacionTerminoPregunta> indicePregunta;
+    InformacionPregunta infPregunta;
     unordered_set<string> stopWords;
     // Palabras de parada. El filtrado de palabras de parada se realizará, tanto en la pregunta como en los documentos, teniendo en cuenta el parámetro minuscSinAcentos y tipoStemmer. Es decir que se aplicará el mismo proceso a las palabras de parada almacenadas en el fichero antes de realizar el filtrado (p.ej. si se aplica el pasar a minúsculas los términos del documento/pregunta a indexar, para comprobar si se ha de eliminar el término, éste se comparará con la versión de palabras de parada en minúsculas). Esto se pide así para casos en los que en el documento/pregunta aparezca: "La casa de Él" y estén almacenadas como stopWords "la, el", si se activa el parámetro minuscSinAcentos, entonces debería filtrar "La, Él", si no hubiese estado activo ese parámetro, entonces no se hubiesen filtrado.
 
     string ficheroStopWords;
-    // Nombre del fichero que contiene las palabras de parada
-
     Tokenizador tok;	
-    // Tokenizador que se usará en la indexación. Se inicializará con los parámetros del constructor: detectComp y minuscSinAcentos, los cuales determinarán qué término se ha de indexar (p.ej. si se activa minuscSinAcentos, entonces se guardarán los términos en minúsculas y sin acentos)
-
-
-    string directorioIndice;
-    // "directorioIndice" será el directorio del disco duro donde se almacenará el índice. En caso que contenga la cadena vacía se creará en el directorio donde se ejecute el indexador
-
+    // TODO: Se inicializará con los parámetros del constructor: detectComp y minuscSinAcentos, los cuales determinarán qué término se ha de indexar (p.ej. si se activa minuscSinAcentos, entonces se guardarán los términos en minúsculas y sin acentos)
+    string directorioIndice; //TODO: directorio donde se va a guardar el indice en el disco (si es "", se guarda en el mismo dir)
     int tipoStemmer;
+    //TODO: mirar el algoritmo de stemming
     // 0 = no se aplica stemmer: se indexa el término tal y como aparece tokenizado
     // Los siguientes valores harán que los términos a indexar se les aplique el stemmer y se almacene solo dicho stem.
     // 1 = stemmer de Porter para español
     // 2 = stemmer de Porter para inglés
     // Para el stemmer de Porter se utilizarán los archivos stemmer.cpp y stemmer.h, concretamente las funciones de nombre "stemmer"
-
-    bool almacenarPosTerm;	
-    // Si es true se almacenará la posición en la que aparecen los términos dentro del documento en la clase InfTermDoc
+    bool almacenarPosTerm;
 };

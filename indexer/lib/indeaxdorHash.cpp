@@ -1,20 +1,60 @@
 #include "indexadorHash.h"
-#include "indexadorInformacion.h"
-#include <iostream>
-#include <unordered_map>
-#include <string>
+
+#include <string.h>
 
 using namespace std;
 
-// Constructor por defecto de IndexadorHash
-IndexadorHash::IndexadorHash() {
-    // Inicialización básica
-    informacionIndexada.clear(); // Suponiendo que es una estructura de datos tipo unordered_map
-    stopWords.clear(); // Inicialización de lista de palabras vacías
-    delimitadores = " ,.;:!?()[]\n\t"; // Delimitadores estándar
-    indexadorInfo = nullptr; // Suponiendo que se usa un puntero a indexadorInformacion
+IndexadorHash::IndexadorHash() : indice(), indiceDocs(), informacionColeccionDocs(), indicePregunta(), infPregunta(), stopWords(), 
+  tok(), tipoStemmer(0), pregunta(""), ficheroStopWords(""), directorioIndice(""), tipoStemmer(0), almacenarPosTerm(false) {}
 
-    cout << "IndexadorHash creado correctamente." << endl;
+IndexadorHash::IndexadorHash(const string& fichStopWords, const string& delimitadores, const bool detectComp, const bool minuscSinAcentos, const string& dirIndice, const int tStemmer, const bool almPosTerm) :
+  indice(), indiceDocs(), informacionColeccionDocs(), pregunta(""), indicePregunta(), infPregunta(), ficheroStopWords(fichStopWords), tok(delimitadores, detectComp, minuscSinAcentos), directorioIndice(dirIndice), 
+  tipoStemmer(tStemmer), almacenarPosTerm(almPosTerm)
+{
+  if(!tok.loader.begin(ficheroStopWords))
+  {
+    cerr << "ERROR: el fichero de stopwords " << ficheroStopWords << "no existe" << endl;
+    ficheroStopWords = "";
+    return;
+  }
+
+  stopWords.reserve(tok.loader.inbuf_size >> 3);
+  volatile size_t remaining_mem = tok.loader.inbuf_size;
+  const char *reader = tok.loader.inbuf, *checkpoint = reader;
+  while(checkpoint)
+  {
+    checkpoint = (const char*)memchr(reader, '\n', remaining_mem);
+
+    stopWords.emplace(reader, (checkpoint ? checkpoint : reader + remaining_mem));
+    reader += checkpoint +1;
+    remaining_mem -= (checkpoint - reader);
+  }
+  tok.loader.terminate();
+}
+
+
+IndexadorHash::~IndexadorHash() {}
+
+
+IndexadorHash& IndexadorHash::operator=(const IndexadorHash& idx)
+{
+  indice = idx.indice;
+  indiceDocs = idx.indiceDocs;
+  informacionColeccionDocs = idx.informacionColeccionDocs;
+  pregunta = idx.pregunta;
+  indicePregunta = idx.indicePregunta;
+  infPregunta = idx.infPregunta;
+  stopWords = idx.stopWords;
+  ficheroStopWords = idx.ficheroStopWords;
+  tok = idx.tok;
+  directorioIndice = idx.directorioIndice;
+  tipoStemmer = idx.tipoStemmer;
+  almacenarPosTerm = idx.almacenarPosTerm;
+}
+
+
+bool IndexadorHash::Indexar(const string& ficheroDocumentos)
+{
 }
 
 

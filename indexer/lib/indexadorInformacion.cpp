@@ -1,5 +1,6 @@
 #include "indexadorInformacion.h"
 
+
 Fecha& Fecha::operator=(const Fecha& f)
 {
   aa = f.aa;
