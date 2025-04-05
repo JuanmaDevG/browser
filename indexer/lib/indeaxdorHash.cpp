@@ -68,92 +68,141 @@ bool IndexadorHash::Indexar(const string& ficheroDocumentos)
 }
 
 
-bool IndexadorHash::IndexarFichero(const string& rutaArchivo) {
-    int fd = open(rutaArchivo.c_str(), O_RDONLY);
-    if (fd == -1) return false;
-
-    struct stat fileInfo;
-    if (fstat(fd, &fileInfo) == -1) {
-        close(fd);
-        return false;
-    }
-
-    size_t fileSize = fileInfo.st_size;
-    vector<char> buffer(fileSize);
-    
-    if (read(fd, buffer.data(), fileSize) != static_cast<ssize_t>(fileSize)) {
-        close(fd);
-        return false;
-    }
-    close(fd);
-
-    string contenido(buffer.begin(), buffer.end());
-
-    vector<string> tokens;
-    tokenizador.Tokenizar(contenido, tokens);
-
-    for (const auto& palabra : tokens) {
-        if (stopWords.find(palabra) == stopWords.end())
-            informacionIndexada[palabra]++;
-    }
-
-    return true;
+bool IndexadorHash::IndexarDirectorio(const string& dirAIndexar)
+{
 }
 
 
-void IndexadorHash::VaciarIndice() {
-    informacionIndexada.clear();
+bool IndexadorHash::GuardarIndexacion() const
+{
 }
 
 
-bool IndexadorHash::GuardarIndice(const string& rutaArchivo) {
-    int fd = open(rutaArchivo.c_str(), O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
-    if (fd == -1) return false;
-
-    for (const auto& [palabra, frecuencia] : informacionIndexada) {
-        string linea = palabra + " " + to_string(frecuencia) + "\n";
-        if (write(fd, linea.c_str(), linea.size()) == -1) {
-            close(fd);
-            return false;
-        }
-    }
-
-    close(fd);
-    return true;
+bool IndexadorHash::RecuperarIndexacion(const string& directorioIndexacion)
+{
 }
 
 
-bool IndexadorHash::CargarStopWords(const string& rutaArchivo) {
-    int fd = open(rutaArchivo.c_str(), O_RDONLY);
-    if (fd == -1) return false;
-
-    struct stat fileInfo;
-    if (fstat(fd, &fileInfo) == -1) {
-        close(fd);
-        return false;
-    }
-
-    size_t fileSize = fileInfo.st_size;
-    vector<char> buffer(fileSize);
-
-    if (read(fd, buffer.data(), fileSize) != static_cast<ssize_t>(fileSize)) {
-        close(fd);
-        return false;
-    }
-    close(fd);
-
-    string contenido(buffer.begin(), buffer.end());
-    vector<string> tokens;
-    tokenizador.Tokenizar(contenido, tokens);
-
-    for (const auto& palabra : tokens)
-        stopWords.insert(palabra);
-
-    return true;
+bool IndexadorHash::IndexarPregunta(const string& preg)
+{
 }
 
 
-void IndexadorHash::ConfigurarDelimitadores(const string& nuevosDelimitadores) {
-    delimitadores = nuevosDelimitadores;
-    tokenizador.SetDelimitadores(nuevosDelimitadores);
+bool IndexadorHash::DevuelvePregunta(string& preg) const
+{
+}
+
+
+bool IndexadorHash::DevuelvePregunta(const string& word, InformacionTerminoPregunta& inf) const
+{
+}
+
+
+bool IndexadorHash::DevuelvePregunta(InformacionPregunta& inf) const
+{
+}
+
+
+bool IndexadorHash::Devuelve(const string& word, InformacionTermino& inf) const
+{
+}
+
+
+bool IndexadorHash::Devuelve(const string& word, const string& nomDoc, InfTermDoc& InfDoc) const
+{
+}
+
+
+bool IndexadorHash::Existe(const string& word) const
+{
+}
+
+
+bool IndexadorHash::BorraDoc(const string& nomDoc)
+{
+}
+
+
+void IndexadorHash::VaciarIndiceDocs()
+{
+}
+
+
+void IndexadorHash::VaciarIndicePreg()
+{
+}
+
+
+int IndexadorHash::NumPalIndexadas() const
+{
+}
+
+
+string IndexadorHash::DevolverFichPalParada () const
+{
+}
+
+
+void IndexadorHash::ListarPalParada() const
+{
+}
+
+
+int IndexadorHash::NumPalParada() const
+{
+}
+
+
+string IndexadorHash::DevolverDelimitadores () const
+{
+}
+
+
+bool IndexadorHash::DevolverCasosEspeciales () const
+{
+}
+
+
+bool IndexadorHash::DevolverPasarAminuscSinAcentos () const
+{
+}
+
+
+bool IndexadorHash::DevolverAlmacenarPosTerm () const
+{
+}
+
+
+string IndexadorHash::DevolverDirIndice () const
+{
+}
+
+
+int IndexadorHash::DevolverTipoStemming () const
+{
+}
+
+
+void IndexadorHash::ListarInfColeccDocs() const
+{
+}
+
+
+void IndexadorHash::ListarTerminos() const
+{
+}
+
+
+bool IndexadorHash::ListarTerminos(const string& nomDoc) const
+{
+}
+
+
+void IndexadorHash::ListarDocs() const
+{
+}
+
+
+bool IndexadorHash::ListarDocs(const string& nomDoc) const
+{
 }

@@ -125,46 +125,9 @@ pair<const char*, const char*> getline() const
 }
 
 
-void memory_pool::write(const void *const chunk, const size_t size, const off_t wrstart = 0)
-{
-  memory_pool::mv(chunk, this->data + wrstart, size);
-}
-
-
-void memory_pool::read(void *const dst, const size_t size, const off_t rdstart = 0)
-{
-  memory_pool::mv(this->data + rdstart, dst, size);
-}
-
-
 extern inline size_t memory_pool::size()
 {
   return data_end - data;
-}
-
-
-void memory_pool::mv(const void *const src, void *const dst, const size_t size)
-{
-  const int64_t* readpoint = reinterpret_cast<const int64_t*>(src);
-  int64_t* writepoint = reinterpret_cast<int64_t*>(dst);
-  const char *const readpoint_end = reinterpret_cast<const char *const>(src) + size;
-  const char *const writepoint_end = reinterpret_cast<const char *const>(dst) + size;
-  const char* remain_readpoint = readpoint_end - (size & 0b111);
-  char* remain_writepoint = const_cast<char*>(writepoint_end) - (size & 0b111);
-
-  while(writepoint < reinterpret_cast<int64_t*>(remain_writepoint) && readpoint < reinterpret_cast<const int64_t*>(remain_readpoint))
-  {
-    *writepoint = *readpoint;
-    ++writepoint;
-    ++readpoint;
-  }
-
-  while(remain_writepoint < writepoint_end && remain_readpoint < readpoint_end)
-  {
-    *remain_writepoint = *remain_readpoint;
-    ++remain_writepoint;
-    ++remain_readpoint;
-  }
 }
 
 
@@ -196,19 +159,13 @@ void iso_8859_1_bitvec::set(const uint8_t delim_idx, const bool val)
 
 void iso_8859_1_bitvec::reset()
 {
-  int64_t* d = reinterpret_cast<int64_t*>(data);
-  const int64_t* end = reinterpret_cast<int64_t*>(data) + AMD64_REGISTER_VEC_SIZE;
-  while(d < end)
-  {
-    *d = 0;
-    ++d;
-  }
+  memset(data, 0, DELIMITER_BIT_VEC_SIZE);
 }
 
 
 void iso_8859_1_bitvec::copy_from(const iso_8859_1_bitvec& delim)
 {
-  memory_pool::mv(delim.data, this->data, DELIMITER_BIT_VEC_SIZE);
+  memcpy(this->data, delim.data, DELIMITER_BIT_VEC_SIZE);
 }
 
 
@@ -221,7 +178,7 @@ void iso_8859_1_bitvec::copy_from(const string& delim_str)
 
 void iso_8859_1_bitvec::copy_to(iso_8859_1_bitvec& dst) const
 {
-  memory_pool::mv(this->data, dst.data, DELIMITER_BIT_VEC_SIZE);
+  memcpy(dst.data, this->data, DELIMITER_BIT_VEC_SIZE);
 }
 
 
@@ -533,9 +490,9 @@ bool Tokenizador::tkDirectory(const char* dir_name, const size_t dir_len)
       // << 1 = outfile, +3 = ".tk"
       entry_name = new char[(entry_len << 1) +3];
     }
-    memory_pool::mv(dir_name, entry_name, dir_len);
+    memcpy(entry_name, dir_name, dir_len);
     *(entry_name + dir_len) = '/';
-    memory_pool::mv(entry->d_name, entry_name + dir_len +1, entry_namlen);
+    memcpy(entry_name + dir_len +1, entry->d_name, entry_namlen);
     *(entry_name + dir_len + 1 + entry_namlen) = '\0';
 
     if(entry->d_type == DT_DIR)
@@ -544,8 +501,8 @@ bool Tokenizador::tkDirectory(const char* dir_name, const size_t dir_len)
     }
     else
     {
-      memory_pool::mv(entry_name, entry_name + entry_len, dir_len + entry_namlen +1);
-      memory_pool::mv(".tk", entry_name + entry_len + dir_len + entry_namlen +1, 4);
+      memcpy(entry_name + entry_len, entry_name, dir_len + entry_namlen +1);
+      memcpy(entry_name + entry_len + dir_len + entry_namlen +1, ".tk", 4);
       tkFile(entry_name, entry_name + entry_len);
     }
   }
@@ -633,7 +590,7 @@ void Tokenizador::safeMemPoolWrite()
     const size_t old_sz = (ioctx.wrend - ioctx.wrbegin);
     const size_t new_sz = old_sz + MEM_POOL_SIZE;
     char* newbuf = new char[new_sz];
-    memory_pool::mv(ioctx.wrbegin, newbuf, old_sz);
+    memcpy(newbuf, ioctx.wrbegin, old_sz);
     ioctx.wr_current = newbuf + old_sz;
     delete[] ioctx.wrbegin;
     ioctx.wrbegin = newbuf;
@@ -644,7 +601,7 @@ void Tokenizador::safeMemPoolWrite()
   {
     const size_t new_sz = MEM_POOL_SIZE + MEM_POOL_SIZE;
     ioctx.wrbegin = new char[new_sz];
-    memory_pool::mv(mem_pool.data, ioctx.wrbegin, MEM_POOL_SIZE);
+    memcpy(ioctx.wrbegin, mem_pool.data, MEM_POOL_SIZE);
     ioctx.wr_current = ioctx.wrbegin + MEM_POOL_SIZE;
     ioctx.wrend = ioctx.wrbegin + new_sz;
     rawWrite();

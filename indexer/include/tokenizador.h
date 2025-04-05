@@ -10,7 +10,6 @@ using namespace std;
 
 #define ISO_8859_SIZE 256
 #define DELIMITER_BIT_VEC_SIZE (ISO_8859_SIZE >> 3)               // Total of 256 bits (32 bytes to store ISO-8859 delimiter state machine)
-#define AMD64_REGISTER_VEC_SIZE (DELIMITER_BIT_VEC_SIZE >> 3)
 #define MEM_POOL_SIZE 256
 
 //TODO: add functions to tokenizer that use just main memory and not files
@@ -36,15 +35,12 @@ struct file_loader {
 };
 
 
+//TODO: add safe writes to memory_pool and probably it's own io_context
 struct memory_pool {
   char data[MEM_POOL_SIZE];
   const char *const data_end = data + MEM_POOL_SIZE;
   
-  void write(const void *const chunk, const size_t size, const off_t wrstart);
-  void read(void *const dst, const size_t size, const off_t rdstart);
   size_t size();
-
-  static void mv(const void *const src, void *const dst, const size_t size);
 };
 
 
