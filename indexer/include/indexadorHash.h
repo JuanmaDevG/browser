@@ -4,6 +4,7 @@
 #include <iostream>
 #include <string>
 #include "indexadorInformacion.h"
+#include "tokenizador.h"
 
 using namespace std;
 

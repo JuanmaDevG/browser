@@ -13,23 +13,26 @@ using namespace std;
 #define AMD64_REGISTER_VEC_SIZE (DELIMITER_BIT_VEC_SIZE >> 3)
 #define MEM_POOL_SIZE 256
 
+//TODO: add functions to tokenizer that use just main memory and not files
 
 struct io_context;
 
-//TODO: bind io_context functions (may add io_context pointer)
+//TODO: refactor io_context to minimum (begin, end, current) and integrate as file_loader members
 struct file_loader {
   const char* inbuf;
   size_t inbuf_size;
+  const char* readpoint;
   char* outbuf;
   size_t outbuf_size;
   const char* outbuf_filename;
 
+  file_loader::file_loader();
   bool begin(const char* in_filename, const char* out_filename);
   void terminate(char *const remaining_writepoint);
   void null_readpoints();
   void null_writepoints();
   void grow_outfile(size_t how_much, io_context& bound_ioc);
-  pair<const char*, const char*> getline(const off_t from) const;
+  pair<const char*, const char*> getline() const;
 };
 
 

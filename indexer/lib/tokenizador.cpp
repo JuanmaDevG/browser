@@ -8,8 +8,12 @@
 #include <dirent.h>
 #include <cstring>
 
-//TODO: uninclude this when possible
-#include<fstream>
+
+file_loader::file_loader()
+{
+  null_readpoints();
+  null_writepoints();
+}
 
 
 bool file_loader::begin(const char* filename, const char* output_filename = nullptr)
@@ -23,6 +27,7 @@ bool file_loader::begin(const char* filename, const char* output_filename = null
   inbuf = (char*)mmap(nullptr, in_fileinfo.st_size, PROT_READ, MAP_SHARED, fd, 0);
   close(fd);
   inbuf_size = in_fileinfo.st_size;
+  readpoint = inbuf;
 
   if(!output_filename) return true;
   fd = open(output_filename, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR);
@@ -74,6 +79,7 @@ extern inline void file_loader::null_readpoints()
 {
   inbuf = nullptr;
   inbuf_size = 0;
+  readpoint = nullptr;
 }
 
 
@@ -100,6 +106,22 @@ void file_loader::grow_outfile(size_t how_much, io_context& bound_ioc)
   bound_ioc.wrbegin = outbuf;
   bound_ioc.wr_current = outbuf + back_diff;
   bound_ioc.wrend = outbuf + outbuf_size;
+}
+
+
+pair<const char*, const char*> getline() const
+{
+  if(readpoint - inbuf >= inbuf_size) return {nullptr, nullptr};
+  if(*readpoint == '\n') ++readpoint;
+
+  pair<const char*, const char*> result(readpoint, nullptr);
+  result.second = (const char*)memchr(readpoint, '\n', inbuf_size - (readpoint - inbuf));
+  if(!result.second)
+  {
+    readpoint = inbuf + inbuf_size;
+    result.second = readpoint;
+  }
+  return result;
 }
 
 
@@ -317,15 +339,19 @@ bool Tokenizador::Tokenizar(const string& i, const string& f)
 
 bool Tokenizador::TokenizarListaFicheros(const string& i)
 {
-  //TODO: optimize (when possible)
-  ifstream list_file(i);
-  if(!list_file.is_open()) return false;
+  file_loader fl;
+
+  if(!fl.begin(i.c_str())) return false;
   string cur_file;
-  while(getline(list_file, cur_file))
+  auto line = fl.getline();
+  while(line.first)
   {
+    cur_file = string(line.first, line.second);
     Tokenizar(cur_file, cur_file + ".tk");
+    line = fl.getline();
   }
 
+  fl.terminate();
   return true;
 }
 

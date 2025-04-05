@@ -13,23 +13,17 @@ IndexadorHash::IndexadorHash(const string& fichStopWords, const string& delimita
 {
   if(!tok.loader.begin(ficheroStopWords))
   {
-    cerr << "ERROR: el fichero de stopwords " << ficheroStopWords << "no existe" << endl;
+    cerr << "ERROR: el fichero de stopwords " << ficheroStopWords << " no existe" << endl;
     ficheroStopWords = "";
     return;
   }
 
-  //TODO: update tokenizer to get line with pair first
   stopWords.reserve(tok.loader.inbuf_size >> 3);
-  volatile size_t remaining_mem = tok.loader.inbuf_size;
-  const char *reader = tok.loader.inbuf, *checkpoint = reader;
-  while(checkpoint)
+  auto reader = tok.loader.getline(0);
+  while(reader.first)
   {
-    //TODO: tie() on reader and checkpoint by tok.loader.getline()
-    checkpoint = (const char*)memchr(reader, '\n', remaining_mem);
-
-    stopWords.emplace(reader, (checkpoint ? checkpoint : reader + remaining_mem));
-    reader += checkpoint +1;
-    remaining_mem -= (checkpoint - reader);
+    stopWords.emplace(reader.first, reader.second);
+    reader = tok.loader.getline((reader.second - reader.first) +1);
   }
   tok.loader.terminate();
 }
@@ -57,6 +51,20 @@ IndexadorHash& IndexadorHash::operator=(const IndexadorHash& idx)
 
 bool IndexadorHash::Indexar(const string& ficheroDocumentos)
 {
+  file_loader fl;
+  if(!fl.begin(ficheroDocumentos.c_str()))
+  {
+    cerr << "ERROR: el fichero de documentos " << ficheroDocumentos << " no existe" << endl;
+    return false;
+  }
+  pair<const char*, const char*> line = fl.getline();
+
+  while(line.first)
+  {
+    //TODO: indexation logic functions
+  }
+
+  fl.terminate();
 }
 
 
