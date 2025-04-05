@@ -4,6 +4,7 @@
 #include <string>
 #include <list>
 #include <cstdint>
+#include <utility>
 
 using namespace std;
 
@@ -28,6 +29,7 @@ struct file_loader {
   void null_readpoints();
   void null_writepoints();
   void grow_outfile(size_t how_much, io_context& bound_ioc);
+  pair<const char*, const char*> getline(const off_t from) const;
 };
 
 

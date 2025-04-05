@@ -18,11 +18,13 @@ IndexadorHash::IndexadorHash(const string& fichStopWords, const string& delimita
     return;
   }
 
+  //TODO: update tokenizer to get line with pair first
   stopWords.reserve(tok.loader.inbuf_size >> 3);
   volatile size_t remaining_mem = tok.loader.inbuf_size;
   const char *reader = tok.loader.inbuf, *checkpoint = reader;
   while(checkpoint)
   {
+    //TODO: tie() on reader and checkpoint by tok.loader.getline()
     checkpoint = (const char*)memchr(reader, '\n', remaining_mem);
 
     stopWords.emplace(reader, (checkpoint ? checkpoint : reader + remaining_mem));

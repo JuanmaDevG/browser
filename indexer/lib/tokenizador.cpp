@@ -8,7 +8,7 @@
 #include <dirent.h>
 #include <cstring>
 
-//TODO: uninclude include this when possible
+//TODO: uninclude this when possible
 #include<fstream>
 
 
