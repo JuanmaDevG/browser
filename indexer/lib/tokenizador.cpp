@@ -439,7 +439,6 @@ bool Tokenizador::tkFile(const char* ifile, const char* ofile)
     cerr << "ERROR: No existe el archivo: " << ifile << endl;
     return false;
   }
-  //TODO: make func to bind ioctx to file_loader or memory_pool
   ioctx.rdbegin = loader.inbuf;
   ioctx.rd_current = ioctx.rdbegin;
   ioctx.rdend = ioctx.rdbegin + loader.inbuf_size;
@@ -507,6 +506,57 @@ bool Tokenizador::tkDirectory(const char* dir_name, const size_t dir_len)
   delete[] entry_name;
   closedir(dir);
   return true;
+}
+
+
+void Tokenizador::tkAppend(const string& filename, vector<string>& tokens)
+{
+  loader.begin(filename.c_str());
+  tokens.reseve(tokens.size() + (loader.inbuf_size >> 3));
+
+  ioctx.rdbegin = loader.inbuf;
+  ioctx.rd_current = ioctx.rdbegin;
+  ioctx.rdend = loader.inbuf + loader.inbuf_size;
+  setMemPool();
+
+  const char* tk;
+  while(ioctx.rd_current < ioctx.rdend)
+  {
+    ioctx.wr_current = ioctx.wrbegin;
+    tk = (this->*extractToken)('\0');
+    if(*tk != '\0') // empty string is nothing being written
+      tokens.push_back(tk);
+  }
+  unsetMemPool();
+  loader.terminate();
+}
+
+
+void Tokenizador::tkDirAppend(const string& dir_name, vector<string>& tokens)
+{
+  DIR* dir;
+  struct dirent* entry;
+
+  if((dir = opendir(dir_name.c_str())) == nullptr)
+  {
+    delete[] entry_name;
+    return false;
+  }
+
+  while((entry = readdir(dir)) != nullptr)
+  {
+    if(entry->d_name[0] == '.' && (entry->d_name[1] == '\0' || (entry->d_name[1] == '.')))
+      continue;
+
+    if(entry->d_type == DT_DIR)
+    {
+      tkDirAppend(entry->d_name, tokens);
+    }
+    else
+    {
+      tkAppend(entry->d_name, tokens);
+    }
+  }
 }
 
 

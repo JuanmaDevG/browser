@@ -35,7 +35,6 @@ struct file_loader {
 };
 
 
-//TODO: add safe writes to memory_pool and probably it's own io_context
 struct memory_pool {
   char data[MEM_POOL_SIZE];
   const char *const data_end = data + MEM_POOL_SIZE;
@@ -68,9 +67,12 @@ struct iso_8859_1_bitvec {
 };
 
 
+class IndexadorHash;
+
 class Tokenizador
 {
   friend ostream& operator<<(ostream&, const Tokenizador&);
+  friend class IndexadorHash;
 
 public:
   Tokenizador (const string& delimitadoresPalabra, const bool kcasosEspeciales, const bool minuscSinAcentos);
@@ -153,8 +155,6 @@ private:
   charwrite_function writeChar;
   charnormalize_function normalizeChar;
 
-  enum class InputType { Stream, File, Directory };
-  vector<string> Tokenizar(const string& i, const InputType);
   void ensureOutfileHasEnoughMem();
   void setMemPool();
   void unsetMemPool();
@@ -163,6 +163,10 @@ private:
   bool isNumeric(const char) const;
   bool tkFile(const char* ifile, const char* ofile);
   bool tkDirectory(const char* name, const size_t len);
+
+  // Functions for the indexer
+  void tkAppend(const string& file, vector<string>& tokens);
+  void tkDirAppend(const string& directory, vector<string>& tokens);
 
   // Values for extractToken
   const char* extractCommonCaseToken(const char last_char);

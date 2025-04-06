@@ -57,11 +57,15 @@ bool IndexadorHash::Indexar(const string& ficheroDocumentos)
     cerr << "ERROR: el fichero de documentos " << ficheroDocumentos << " no existe" << endl;
     return false;
   }
-  pair<const char*, const char*> line = fl.getline();
+  vector<string> tokens;
+  auto line = fl.getline();
+  string cur_file(line.first, line.second);
 
   while(line.first)
   {
-    //TODO: indexation logic functions
+    tok.tkAppend(cur_file, tokens);
+    line = fl.getline();
+    cur_file.assign(line.first, line.second);
   }
 
   fl.terminate();
