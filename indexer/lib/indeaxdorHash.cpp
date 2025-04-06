@@ -66,6 +66,7 @@ bool IndexadorHash::Indexar(const string& ficheroDocumentos)
     tok.tkAppend(cur_file, tokens);
     line = fl.getline();
     cur_file.assign(line.first, line.second);
+    //TODO: pop tokens and emplace them back
   }
 
   fl.terminate();
