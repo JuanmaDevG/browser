@@ -373,8 +373,6 @@ bool Tokenizador::PasarAminuscSinAcentos() const
 }
 
 
-//TODO: change this to loader.makeiowr_safe(ioctx) or ioctx.ensure_outfile_mem(file_loader)
-//TODO: consider adding an object reference to some of the structs
 extern inline void Tokenizador::ensureOutfileHasEnoughMem()
 {
   if(ioctx.rdend - ioctx.rd_current > ioctx.wrend - ioctx.wr_current)

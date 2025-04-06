@@ -148,10 +148,13 @@ private:
   file_loader loader;
   memory_pool mem_pool;
   io_context ioctx;
+
   tkextract_function extractToken;
   charwrite_function writeChar;
   charnormalize_function normalizeChar;
 
+  enum class InputType { Stream, File, Directory };
+  vector<string> Tokenizar(const string& i, const InputType);
   void ensureOutfileHasEnoughMem();
   void setMemPool();
   void unsetMemPool();
