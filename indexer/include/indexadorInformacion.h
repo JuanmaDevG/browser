@@ -3,6 +3,7 @@
 #include <unordered_map>
 #include <list> //TODO: probably remove (cause of mem fragmentation)
 
+
 using namespace std;
 
 class InfTermDoc;

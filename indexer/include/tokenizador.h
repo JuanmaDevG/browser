@@ -12,46 +12,59 @@ using namespace std;
 #define DELIMITER_BIT_VEC_SIZE (ISO_8859_SIZE >> 3)               // Total of 256 bits (32 bytes to store ISO-8859 delimiter state machine)
 #define MEM_POOL_SIZE 256
 
-//TODO: add functions to tokenizer that use just main memory and not files
-
-struct io_context;
+struct io_context {
+  union {
+    const char* cbegin;
+    char* begin;
+  }
+  union {
+    const char* cend;
+    char* end;
+  }
+  union {
+    const char* readpoint;
+    char* writepoint;
+  }
+  const char* frontpoint;
+};
 
 //TODO: refactor io_context to minimum (begin, end, current) and integrate as file_loader members
 struct file_loader {
   const char* inbuf;
+  const char* inbuf_end;
   size_t inbuf_size;
   const char* readpoint;
+  const char* frontpoint;
+  int inbuf_fd;
+
   char* outbuf;
+  char* outbuf_end;
   size_t outbuf_size;
-  const char* outbuf_filename;
+  char* writepoint;
+  int outbuf_fd;
 
   file_loader::file_loader();
   bool begin(const char* in_filename, const char* out_filename);
   void terminate(char *const remaining_writepoint);
   void null_readpoints();
   void null_writepoints();
-  void grow_outfile(size_t how_much, io_context& bound_ioc);
+  void grow_outfile(size_t how_much);
   pair<const char*, const char*> getline() const;
+  size_t write(void* buf, const size_t sz);
+  bool put(const char);
 };
 
 
 struct memory_pool {
   char data[MEM_POOL_SIZE];
-  const char *const data_end = data + MEM_POOL_SIZE;
+  char* buf = data;
+  char* buf_end = data + MEM_POOL_SIZE;
+  char* writepoint = buf;
+  size_t bufsize = MEM_POOL_SIZE;
   
-  size_t size();
-};
-
-
-struct io_context {
-  const char* rdbegin;
-  const char* rd_current;
-  const char* rdend;
-  char* wrbegin;
-  char* wr_current;
-  const char* wrend;
-
-  void swap(io_context&);
+  bool resize(const size_t); // TODO: just false if not enough mem
+  bool put(const char);
+  size_t write(void* buf, size_t sz);
 };
 
 
@@ -149,7 +162,6 @@ private:
   bool pasarAminuscSinAcentos;
   file_loader loader;
   memory_pool mem_pool;
-  io_context ioctx;
 
   tkextract_function extractToken;
   charwrite_function writeChar;

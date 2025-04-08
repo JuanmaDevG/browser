@@ -1,4 +1,4 @@
-#include <tokenizador.h>
+#include "tokenizador.h"
 
 #include <sys/mman.h>
 #include <fcntl.h>
@@ -18,56 +18,58 @@ file_loader::file_loader()
 
 bool file_loader::begin(const char* filename, const char* output_filename = nullptr)
 {
-  int fd = open(filename, O_RDONLY);
+  inbuf_fd = open(filename, O_RDONLY);
   struct stat in_fileinfo;
-  if(fd < 0)
+  if(inbuf_fd < 0)
     return false;
 
-  fstat(fd, &in_fileinfo);
-  inbuf = (char*)mmap(nullptr, in_fileinfo.st_size, PROT_READ, MAP_SHARED, fd, 0);
-  close(fd);
+  fstat(inbuf_fd, &in_fileinfo);
+  inbuf = (char*)mmap(nullptr, in_fileinfo.st_size, PROT_READ, MAP_SHARED, inbuf_fd, 0);
   inbuf_size = in_fileinfo.st_size;
   readpoint = inbuf;
+  frontpoint = inbuf;
+  inbuf_end = inbuf + inbuf_size;
 
   if(!output_filename) return true;
-  fd = open(output_filename, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR);
-  if(fd < 0)
+  outbuf_fd = open(output_filename, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR);
+  if(outbuf_fd < 0)
   {
     munmap(const_cast<char*>(inbuf), in_fileinfo.st_size);
     null_readpoints();
     return false;
   }
-  ftruncate(fd, in_fileinfo.st_size);
-  outbuf = (char*)mmap(nullptr, in_fileinfo.st_size, PROT_WRITE, MAP_SHARED, fd, 0);
+  ftruncate(outbuf_fd, in_fileinfo.st_size);
+  outbuf = (char*)mmap(nullptr, in_fileinfo.st_size, PROT_WRITE, MAP_SHARED, outbuf_fd, 0);
   if(outbuf == MAP_FAILED)
   {
-    close(fd);
+    close(inbuf_fd);
+    close(outbuf_fd);
     munmap(const_cast<char*>(inbuf), inbuf_size);
     null_readpoints();
     null_writepoints();
     return false;
   }
-  close(fd);
   outbuf_size = in_fileinfo.st_size;
-  outbuf_filename = output_filename;
+  outbuf_end = outbuf + outbuf_size;
+  writepoint = outbuf;
 
   return true;
 }
 
 
-void file_loader::terminate(char* const remaining_writepoint = nullptr)
+void file_loader::terminate()
 {
   if(!inbuf) return;
   munmap(const_cast<char*>(inbuf), inbuf_size);
+  close(inbuf_fd);
 
   if(outbuf) {
     munmap(outbuf, outbuf_size);
-    if(remaining_writepoint && (outbuf + outbuf_size) - remaining_writepoint)  // Adjust filesize
+    if(writepoint < outbuf_end)  // Adjust filesize
     {
-      int fd = open(outbuf_filename, O_WRONLY);
-      ftruncate(fd, outbuf_size - ((outbuf + outbuf_size) - remaining_writepoint));
-      close(fd);
+      ftruncate(outbuf_fd, outbuf_size - (outbuf_end - writepoint));
     }
+    close(outbuf_fd);
   }
 
   null_readpoints();
@@ -78,57 +80,64 @@ void file_loader::terminate(char* const remaining_writepoint = nullptr)
 extern inline void file_loader::null_readpoints()
 {
   inbuf = nullptr;
+  inbuf_end = nullptr;
   inbuf_size = 0;
   readpoint = nullptr;
+  frontpoint = nullptr;
+  inbuf_fd = 0;
 }
 
 
 extern inline void file_loader::null_writepoints()
 {
   outbuf = nullptr;
+  outbuf_end = nullptr;
   outbuf_size = 0;
-  outbuf_filename = nullptr;
+  writepoint = nullptr;
+  outbuf_fd = 0;
 }
 
 
-void file_loader::grow_outfile(size_t how_much, io_context& bound_ioc)
+void file_loader::grow_outfile(size_t how_much)
 {
   munmap(outbuf, outbuf_size);
   how_much += outbuf_size;
 
-  int fd = open(outbuf_filename, O_WRONLY);
-  ftruncate(fd, how_much);
-  outbuf = (char*)mmap(nullptr, how_much, PROT_WRITE, MAP_SHARED, fd, 0);
+  size_t checkpoint = writepoint - outbuf;
+  ftruncate(outbuf_fd, how_much);
+  outbuf = (char*)mmap(nullptr, how_much, PROT_WRITE, MAP_SHARED, outbuf_fd, 0);
   outbuf_size = how_much;
-  close(fd);
   
-  size_t back_diff = bound_ioc.wr_current - bound_ioc.wrbegin;
-  bound_ioc.wrbegin = outbuf;
-  bound_ioc.wr_current = outbuf + back_diff;
-  bound_ioc.wrend = outbuf + outbuf_size;
+  writepoint = outbuf + checkpoint;
+  outbuf_end = outbuf + outbuf_size;
 }
 
 
 pair<const char*, const char*> getline() const
 {
-  if(readpoint - inbuf >= inbuf_size) return {nullptr, nullptr};
-  if(*readpoint == '\n') ++readpoint;
+  if(frontpoint >= inbuf_end) return {nullptr, nullptr};
+  if(*frontpoint == '\n') ++frontpoint;
+  readpoint = frontpoint;
 
-  pair<const char*, const char*> result(readpoint, nullptr);
-  result.second = (const char*)memchr(readpoint, '\n', inbuf_size - (readpoint - inbuf));
-  if(!result.second)
-  {
-    readpoint = inbuf + inbuf_size;
-    result.second = readpoint;
-  }
-  return result;
+  frontpoint = (const char*)memchr(readpoint, '\n', inbuf_size - (readpoint - inbuf));
+  if(!frontpoint)
+    frontpoint = inbuf + inbuf_size;
+
+  return {readpoint, frontpoint};
 }
 
 
-extern inline size_t memory_pool::size()
+size_t file_loader::write(const void* buf, size_t sz)
 {
-  return data_end - data;
+  if(!outbuf) return 0;
+  if(outbuf_end - writepoint < sz) sz = outbuf_end - writepoint;
+  memcpy(writepoint, buf, sz);
+  writepoint += sz;
+  return sz;
 }
+
+
+//TODO: memory_pool functions
 
 
 void io_context::swap(io_context& ioc)
