@@ -45,13 +45,16 @@ struct file_loader {
 
   file_loader::file_loader();
   bool begin(const char* in_filename, const char* out_filename);
-  void terminate(char *const remaining_writepoint);
+  void terminate();
   void null_readpoints();
   void null_writepoints();
-  void grow_outfile(size_t how_much);
+  bool resize_outfile(const size_t);
   pair<const char*, const char*> getline() const;
-  size_t write(void* buf, const size_t sz);
+  bool write(void* buf, const size_t sz);
   bool put(const char);
+
+  void mem_begin(const char* buf, const size_t sz);
+  void mem_terminate();
 };
 
 
@@ -61,10 +64,11 @@ struct memory_pool {
   char* buf_end = data + MEM_POOL_SIZE;
   char* writepoint = buf;
   size_t bufsize = MEM_POOL_SIZE;
-  
-  bool resize(const size_t); // TODO: just false if not enough mem
+
+  void reset();
+  bool resize(const size_t);
+  size_t write(const void* buf, const size_t sz);
   bool put(const char);
-  size_t write(void* buf, size_t sz);
 };
 
 
@@ -152,20 +156,16 @@ private:
     0x0, 0x0, 0x0                                   // accented y, wtf, dieresy y
   };
 
-  using charwrite_function = void (Tokenizador::*)(void);
-  using charnormalize_function = char (Tokenizador::*)(const char);
-  using tkextract_function = const char* (Tokenizador::*)(const char);
+  using charnormalize_function = 
 
-  uint8_t delimitadoresPalabra[DELIMITER_BIT_VEC_SIZE];
   iso_8859_1_bitvec delimiters;
   bool casosEspeciales;
   bool pasarAminuscSinAcentos;
   file_loader loader;
   memory_pool mem_pool;
 
-  tkextract_function extractToken;
-  charwrite_function writeChar;
-  charnormalize_function normalizeChar;
+  pair<const char*, const char*> (Tokenizador::*)(const char) extractToken;
+  char (Tokenizador::*)(const char) normalizeChar;
 
   void ensureOutfileHasEnoughMem();
   void setMemPool();
@@ -181,12 +181,8 @@ private:
   void tkDirAppend(const string& directory, vector<string>& tokens);
 
   // Values for extractToken
-  const char* extractCommonCaseToken(const char last_char);
-  const char* extractSpecialCaseToken(const char last_char);
-
-  // Values for writeChar:
-  void rawWrite();
-  void safeMemPoolWrite();
+  pair<const char*, const char*> extractCommonCaseToken();
+  pair<const char*, const char*> extractSpecialCaseToken();
 
   // Values for normalizeChar
   char rawCharReturn(const char);

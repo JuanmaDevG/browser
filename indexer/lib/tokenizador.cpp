@@ -1,5 +1,7 @@
 #include "tokenizador.h"
 
+#define _GNU_SOURCE
+
 #include <sys/mman.h>
 #include <fcntl.h>
 #include <sys/stat.h>
@@ -98,22 +100,26 @@ extern inline void file_loader::null_writepoints()
 }
 
 
-void file_loader::grow_outfile(size_t how_much)
+bool file_loader::resize_outfile(const size_t sz)
 {
-  munmap(outbuf, outbuf_size);
-  how_much += outbuf_size;
-
-  size_t checkpoint = writepoint - outbuf;
-  ftruncate(outbuf_fd, how_much);
-  outbuf = (char*)mmap(nullptr, how_much, PROT_WRITE, MAP_SHARED, outbuf_fd, 0);
-  outbuf_size = how_much;
-  
+  off_t checkpoint = writepoint - outbuf;
+  if(ftruncate(outbuf_fd, sz) < 0) return false;
+  outbuf = (char*)mremap(outbuf, outbuf_size, sz, MREMAP_MAYMOVE);
+  if(outbuf = MAP_FAILED)
+  {
+    close(outbuf_fd);
+    null_writepoints();
+    return false;
+  }
+  outbuf_size = sz;
   writepoint = outbuf + checkpoint;
-  outbuf_end = outbuf + outbuf_size;
+  outbuf_end = outbuf + sz;
+
+  return true;
 }
 
 
-pair<const char*, const char*> getline() const
+pair<const char*, const char*> file_loader::getline() const
 {
   if(frontpoint >= inbuf_end) return {nullptr, nullptr};
   if(*frontpoint == '\n') ++frontpoint;
@@ -127,30 +133,109 @@ pair<const char*, const char*> getline() const
 }
 
 
-size_t file_loader::write(const void* buf, size_t sz)
+bool file_loader::write(const void* buf, size_t sz)
 {
-  if(!outbuf) return 0;
-  if(outbuf_end - writepoint < sz) sz = outbuf_end - writepoint;
+  if(outbuf_end - writepoint < sz)
+  {
+    if(!resize_outfile(writepoint - outbuf + sz))
+      return false;
+  }
   memcpy(writepoint, buf, sz);
   writepoint += sz;
-  return sz;
+  return true;
 }
 
 
-//TODO: memory_pool functions
-
-
-void io_context::swap(io_context& ioc)
+bool file_loader::put(const char c)
 {
-  std::swap(rdbegin, ioc.rdbegin);
-  std::swap(rd_current, ioc.rd_current);
-  std::swap(rdend, ioc.rdend);
-  std::swap(wrbegin, ioc.wrbegin);
-  std::swap(wr_current, ioc.wr_current);
-  std::swap(wrend, ioc.wrend);
+  if(writepoint >= outbuf_end)
+    if(!resize_outfile(outbuf_size + 256))
+      return false;
+  *writepoint = c;
+  ++writepoint;
+  return true;
 }
 
 
+bool file_loader::mem_begin(const char* buf, const size_t sz)
+{
+  inbuf = buf;
+  inbuf_end = inbuf + sz;
+  inbuf_size = sz;
+  readpoint = inbuf;
+  frontpoint = inbuf;
+  fd = 0;
+}
+
+
+void mem_terminate()
+{
+  null_readpoints;
+}
+
+
+void memory_pool::reset()
+{
+  if(buf != data)
+  {
+    delete[] buf;
+    buf = data;
+    bufsize = MEM_POOL_SIZE;
+    buf_end = buf + MEM_POOL_SIZE;
+  }
+  writepoint = buf;
+}
+
+
+bool memory_pool::resize(const size_t sz)
+{
+  if(sz <= bufsize)
+  {
+    buf_end -= bufsize - sz;
+    bufsize = sz;
+    if(writepoint > buf_end)
+      writepoint = buf_end;
+    return true;
+  }
+
+  off_t written_bytes = writepoint - buf;
+  char* newbuf = new char[sz];
+  if(!newbuf) return false;
+  memcpy(newbuf, buf, written_bytes);
+  if(buf != data)
+    delete[] buf;
+  buf = newbuf;
+  buf_end = buf + sz;
+  bufsize = sz;
+  writepoint = buf + written_bytes;
+  return true;
+}
+
+
+bool memory_pool::write(const void* rdbuf, const size_t sz)
+{
+  if(buf_end - writepoint < sz)
+    if(!this->resize(writepoint - buf + sz))
+      return false;
+
+  memcpy(writepoint, rdbuf, sz);
+  writepoint += sz;
+  return true;
+}
+
+
+bool memory_pool::put(const char c)
+{
+  if(writepoint >= buf_end)
+    if(!this->resize(bufsize + 256))
+      return false;
+  *writepoint = c;
+  ++writepoint;
+  return true;
+}
+
+
+//TODO: substitute by bitset operations
 extern inline bool iso_8859_1_bitvec::check(const uint8_t delim_idx) const
 {
   return static_cast<bool>((this->data[delim_idx >> 3] >> (delim_idx & 0b111)) & 1);
@@ -280,12 +365,11 @@ Tokenizador& Tokenizador::operator=(const Tokenizador& tk)
 void Tokenizador::Tokenizar(const string& str, list<string>& tokens)
 {
   tokens.clear();
-  ioctx.rdbegin = str.c_str();
-  ioctx.rd_current = ioctx.rdbegin;
-  ioctx.rdend = ioctx.rdbegin + str.length();
-  setMemPool();
+  loader.mem_begin(str.c_str(), std.length());
+  pair<const char*, const char*> tk;
+  //TODO: make clear extractToken function parameters
+  //TODO: probably remove mem_pool attribute
 
-  const char* tk;
   while(ioctx.rd_current < ioctx.rdend)
   {
     ioctx.wr_current = ioctx.wrbegin;
@@ -293,7 +377,7 @@ void Tokenizador::Tokenizar(const string& str, list<string>& tokens)
     if(*tk != '\0') // empty string is nothing being written
       tokens.push_back(tk);
   }
-  unsetMemPool();
+  loader.mem_terminate();
 }
 
 
@@ -379,37 +463,6 @@ void Tokenizador::PasarAminuscSinAcentos(const bool nuevoPasarAminuscSinAcentos)
 bool Tokenizador::PasarAminuscSinAcentos() const
 {
   return pasarAminuscSinAcentos;
-}
-
-
-extern inline void Tokenizador::ensureOutfileHasEnoughMem()
-{
-  if(ioctx.rdend - ioctx.rd_current > ioctx.wrend - ioctx.wr_current)
-  {
-    size_t difference = (ioctx.rdend - ioctx.rd_current) - (ioctx.wrend - ioctx.wr_current);
-    loader.grow_outfile(difference, ioctx);
-    ioctx.rdend += difference;
-  }
-}
-
-
-void Tokenizador::setMemPool()
-{
-  ioctx.wrbegin = mem_pool.data;
-  ioctx.wr_current = ioctx.wrbegin;
-  ioctx.wrend = mem_pool.data_end;
-  writeChar = &Tokenizador::safeMemPoolWrite;
-}
-
-
-void Tokenizador::unsetMemPool()
-{
-  if(ioctx.wrbegin && ioctx.wrbegin != loader.outbuf && ioctx.wrbegin != mem_pool.data)
-  {
-    delete[] ioctx.wrbegin;
-    ioctx.wrbegin = nullptr;
-    writeChar = &Tokenizador::rawWrite;
-  }
 }
 
 
@@ -625,44 +678,6 @@ const char* Tokenizador::extractSpecialCaseToken(const char last)
   putTerminatingChar(last);
 
   return ini_wrptr;
-}
-
-
-void Tokenizador::rawWrite()
-{
-  *ioctx.wr_current = (this->*normalizeChar)(*ioctx.rd_current);
-  ++ioctx.wr_current;
-  ++ioctx.rd_current;
-}
-
-
-void Tokenizador::safeMemPoolWrite()
-{
-  if(ioctx.wr_current < ioctx.wrend)
-  {
-    rawWrite();
-  }
-  else if(ioctx.wr_current != mem_pool.data)
-  {
-    const size_t old_sz = (ioctx.wrend - ioctx.wrbegin);
-    const size_t new_sz = old_sz + MEM_POOL_SIZE;
-    char* newbuf = new char[new_sz];
-    memcpy(newbuf, ioctx.wrbegin, old_sz);
-    ioctx.wr_current = newbuf + old_sz;
-    delete[] ioctx.wrbegin;
-    ioctx.wrbegin = newbuf;
-    ioctx.wrend = newbuf + new_sz;
-    rawWrite();
-  }
-  else
-  {
-    const size_t new_sz = MEM_POOL_SIZE + MEM_POOL_SIZE;
-    ioctx.wrbegin = new char[new_sz];
-    memcpy(ioctx.wrbegin, mem_pool.data, MEM_POOL_SIZE);
-    ioctx.wr_current = ioctx.wrbegin + MEM_POOL_SIZE;
-    ioctx.wrend = ioctx.wrbegin + new_sz;
-    rawWrite();
-  }
 }
 
 
