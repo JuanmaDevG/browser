@@ -55,7 +55,7 @@ struct file_loader {
   bool write(void* buf, const size_t sz);
   bool put(const char);
 
-  void mem_begin(const char* buf, const size_t sz);
+  void mem_begin(const char* rdbuf, const size_t rdbuf_sz);
   void mem_terminate();
 };
 

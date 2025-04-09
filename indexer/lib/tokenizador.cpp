@@ -1,7 +1,5 @@
 #include "tokenizador.h"
 
-#define _GNU_SOURCE
-
 #include <sys/mman.h>
 #include <fcntl.h>
 #include <sys/stat.h>
@@ -20,7 +18,7 @@ file_loader::file_loader()
 
 bool file_loader::begin(const char* filename, const char* output_filename = nullptr)
 {
-  inbuf_fd = open(filename, O_RDWR);
+  inbuf_fd = open(filename, O_RDONLY);
   struct stat in_fileinfo;
   if(inbuf_fd < 0)
     return false;
@@ -157,20 +155,20 @@ bool file_loader::put(const char c)
 }
 
 
-bool file_loader::mem_begin(const char* buf, const size_t sz)
+bool file_loader::mem_begin(const char* rdbuf, const size_t rdbuf_sz)
 {
-  inbuf = buf;
-  inbuf_end = inbuf + sz;
+  inbuf = rdbuf;
+  inbuf_end = inbuf + rdbuf_sz;
   inbuf_size = sz;
   readpoint = inbuf;
   frontpoint = inbuf;
-  fd = 0;
+  inbuf_fd = 0;
 }
 
 
 void mem_terminate()
 {
-  null_readpoints;
+  null_readpoints();
 }
 
 
@@ -365,17 +363,26 @@ Tokenizador& Tokenizador::operator=(const Tokenizador& tk)
 void Tokenizador::Tokenizar(const string& str, list<string>& tokens)
 {
   tokens.clear();
-  loader.mem_begin(str.c_str(), std.length());
+  string str_copy(str);
+  if(pasarAminuscSinAcentos)
+  {
+    for(auto i = str_copy.begin(); i != str_copy.end(); i++)
+      *i = normalizeChar(*i);
+  }
+  loader.mem_begin(str_copy.c_str(), str_copy.length());
   pair<const char*, const char*> tk;
-  //TODO: make clear extractToken function parameters
-  //TODO: probably remove mem_pool attribute
 
   while(loader.frontpoint < loader.inbuf_end)
   {
     tk = (this->*extractToken)();
     if(tk.first != nullptr)
+    {
       tokens.emplace_back(tk.first, tk.second);
-    //TODO: ensure that if special cases are applied, and if the element is a number and starts with point or comma -> push_front('0')
+      if(*loader.readpoint == ',' || *loader.readpoint == '.')
+      {
+        tokens.back() = string(1, '0') + tokens.back();
+      }
+    }
   }
   loader.mem_terminate();
 }
@@ -456,7 +463,6 @@ bool Tokenizador::CasosEspeciales() const
 void Tokenizador::PasarAminuscSinAcentos(const bool nuevoPasarAminuscSinAcentos)
 {
   pasarAminuscSinAcentos = nuevoPasarAminuscSinAcentos;
-  normalizeChar = (pasarAminuscSinAcentos ? &Tokenizador::minWithoutAccent : &Tokenizador::rawCharReturn);
 }
 
 
@@ -486,6 +492,7 @@ void Tokenizador::skipDelimiters(const bool leaveLastOne)
 
   if(leaveLastOne)
     --loader.frontpoint;
+  loader.readpoint = loader.frontpoint;
 }
 
 
@@ -503,13 +510,17 @@ bool Tokenizador::tkFile(const char* ifile, const char* ofile)
     return false;
   }
 
-  //TODO: normalize the entire input file by a const disqualified pointer
+  if(pasarAminuscSinAcentos)
+  {
+    for(char* i = const_cast<char*>(loader.inbuf); i < loader.inbuf_end; ++i)
+      *i = normalizeChar(*i);
+  }
   pair<const char*, const char*> tk;
+
   while(loader.frontpoint < loader.inbuf_end)
   {
     tk = (this->*extractToken)();
     loader.write(tk.first, tk.second - tk.first);
-    //TODO: make the exception to prove if is a number or not (or generalize it)
   }
 
   loader.terminate();
@@ -633,60 +644,56 @@ pair<const char*, const char*> Tokenizador::extractCommonCaseToken()
 pair<const char*, const char*> Tokenizador::extractSpecialCaseToken()
 {
   skipDelimiters(true);
-  const char* tk_end;
+  loader.readpoint = loader.frontpoint;
 
-  tk_end = decimalTill();
-  if(tk_end)
+  loader.frontpoint = decimalTill();
+  if(loader.frontpoint)
   {
-    if(*loader.frontpoint == ',' || *loader.frontpoint == '.')
+    if((*loader.readpoint == ',' || *loader.readpoint == '.') && loader.writepoint)
     {
-      putTerminatingChar('0'); //TODO: substitute in favour of a normal write out of the function adding the zero char
-                               //TODO: outside of the function, make a put()
+      loader.put(0);
+      ++loader.writepoint;
     }
-  }
-  else
-  {
-    if(delimiters.check(*loader.frontpoint))
-      ++loader.frontpoint; // Pass delimiter
-
-    tk_end = multiwordTill();
-    if(!tk_end)
-      tk_end = urlTill();
-    if(!tk_end)
-      tk_end = emailTill();
-    if(!tk_end)
-      tk_end = acronymTill();
+    return {loader.readpoint, loader.frontpoint};
   }
 
-  if(!tk_end)
+  if(delimiters.check(*loader.frontpoint))
+    ++loader.frontpoint; // Pass delimiter
+
+  loader.frontpoint = multiwordTill();
+  if(!loader.frontpoint)
+    loader.frontpoint = urlTill();
+  else if(!loader.frontpoint)
+    loader.frontpoint = emailTill();
+  else if(!loader.frontpoint)
+    loader.frontpoint = acronymTill();
+  else if(!loader.frontpoint)
     return extractCommonCaseToken();
 
-  loader.frontpoint = tk_end;
-  return {loader.readpoint, tk_end};
+  return {loader.readpoint, loader.frontpoint};
 }
 
 
-//TODO: ask the teacher if an accented or capital leter can be delimiter (¿getChar() everywhere?)
 const char* Tokenizador::multiwordTill()
 {
-  const char* reader = ioctx.rd_current;
+  const char* reader = loader.readpoint;
   if(!delimiters.check('-') || delimiters.check(*reader))
     return nullptr;
 
-  while(reader < ioctx.rdend && !delimiters.check(*reader))
+  while(reader < loader.inbuf_end && !delimiters.check(*reader))
     ++reader;
-  if(reader == ioctx.rdend || *reader != '-' || reader +1 == ioctx.rdend || delimiters.check(*(reader +1)))
+  if(reader == loader.inbuf_end || *reader != '-' || reader +1 == loader.inbuf_end || delimiters.check(*(reader +1)))
     return nullptr;
 
   reader += 2;
-  while(reader < ioctx.rdend)
+  while(reader < loader.inbuf_end)
   {
     // hyphen allowed
-    while(reader < ioctx.rdend && !delimiters.check(*reader))
+    while(reader < loader.inbuf_end && !delimiters.check(*reader))
       ++reader;
 
     // no hyphen means end delimiter
-    if(reader == ioctx.rdend || *reader != '-' || reader +1 == ioctx.rdend || delimiters.check(*(reader +1)))
+    if(reader == loader.inbuf_end || *reader != '-' || reader +1 == loader.inbuf_end || delimiters.check(*(reader +1)))
       return reader;
     ++reader;
   }
@@ -698,25 +705,25 @@ const char* Tokenizador::multiwordTill()
 //TODO: make url_delim constexpr
 const char* Tokenizador::urlTill()
 {
-  const char* reader = loader.frontpoint;
+  const char* reader = loader.readpoint; // Not frontpoint because can be null
   iso_8859_1_bitvec url_delim;
   url_delim.reset();
   url_delim.copy_from("_:/.?&-=#@");
 
   if(
-    reader +4 >= ioctx.rdend 
+    reader +4 >= loader.inbuf_end 
     || (!url_delim.check(*(reader +4)) && delimiters.check(*(reader +4)))
     || !(
-      ((this->*normalizeChar)(*reader) == 'f' 
-       && (this->*normalizeChar)(*(reader +1)) == 't' 
-       && (this->*normalizeChar)(*(reader +2)) == 'p' 
+      ((*reader) == 'f' 
+       && (*(reader +1)) == 't' 
+       && (*(reader +2)) == 'p' 
        && *(reader +3) == ':')
-      || ((this->*normalizeChar)(*reader) == 'h' 
-        && (this->*normalizeChar)(*(reader +1)) == 't' 
-        && (this->*normalizeChar)(*(reader +2)) == 't' 
-        && (this->*normalizeChar)(*(reader +3)) == 'p'
+      || ((*reader) == 'h' 
+        && (*(reader +1)) == 't' 
+        && (*(reader +2)) == 't' 
+        && (*(reader +3)) == 'p'
         && (*(reader +4) == ':'
-          || (*(reader +4) == 's' && reader +5 < ioctx.rdend && *(reader +5) == ':')))))
+          || (*(reader +4) == 's' && reader +5 < loader.inbuf_end && *(reader +5) == ':')))))
   {
     return nullptr;
   }
@@ -724,11 +731,11 @@ const char* Tokenizador::urlTill()
 
   // The reader must point to ':'
   if(*(reader -1) == ':') --reader;
-  else if((this->*normalizeChar)(*reader) == 's') ++reader;
+  else if((*reader) == 's') ++reader;
 
-  if(reader +1 >= ioctx.rdend || (delimiters.check(*(reader +1)) && !url_delim.check(*(reader +1))))
+  if(reader +1 >= loader.inbuf_end || (delimiters.check(*(reader +1)) && !url_delim.check(*(reader +1))))
     return nullptr;
-  while(reader < ioctx.rdend)
+  while(reader < loader.inbuf_end)
   {
     if(delimiters.check(*reader) && !url_delim.check(*reader))
       return reader;
@@ -741,13 +748,13 @@ const char* Tokenizador::urlTill()
 
 const char* Tokenizador::emailTill()
 {
-  if(!delimiters.check('@') || *ioctx.rd_current == '@')
+  if(!delimiters.check('@') || *loader.readpoint == '@')
     return nullptr;
 
-  const char* reader = ioctx.rd_current;
+  const char* reader = loader.readpoint;
   bool found_at_sign = false;
 
-  while(reader < ioctx.rdend && !found_at_sign)
+  while(reader < loader.inbuf_end && !found_at_sign)
   {
     if(*reader == '@')
     {
@@ -766,13 +773,13 @@ const char* Tokenizador::emailTill()
   iso_8859_1_bitvec sufix_delimiters; //TODO: make constexpr when possible
   sufix_delimiters.reset();
   sufix_delimiters.copy_from(".-_");
-  while(reader < ioctx.rdend)
+  while(reader < loader.inbuf_end)
   {
     if(*reader == '@')
       return nullptr; // Not allowed second @
     if(sufix_delimiters.check(*reader)) 
     {
-      if(delimiters.check(*(reader -1)) || reader +1 == ioctx.rdend || delimiters.check(*(reader +1)))
+      if(delimiters.check(*(reader -1)) || reader +1 == loader.inbuf_end || delimiters.check(*(reader +1)))
         return nullptr;
     }
     else if(delimiters.check(*reader))
@@ -789,11 +796,11 @@ const char* Tokenizador::acronymTill()
   if(!delimiters.check('.'))
     return nullptr;
 
-  const char* reader = ioctx.rd_current;
-  while(reader < ioctx.rdend)
+  const char* reader = loader.readpoint;
+  while(reader < loader.inbuf_end)
   {
     if(
-        *reader == '.' && (reader +1 == ioctx.rdend || delimiters.check(*(reader +1)))
+        *reader == '.' && (reader +1 == loader.inbuf_end || delimiters.check(*(reader +1)))
         || *reader != '.' && delimiters.check(*reader))
     {
       return reader;
@@ -807,7 +814,7 @@ const char* Tokenizador::decimalTill()
 {
   if(!(delimiters.check('.') && delimiters.check(',')))
     return nullptr;
-  const char* reader = ioctx.rd_current;
+  const char* reader = loader.readpoint;
   const char *dot = nullptr, *comma = nullptr;
 
   if(*reader == '.')
@@ -826,19 +833,19 @@ const char* Tokenizador::decimalTill()
   else ++reader;
 
   // Guaranteed at least one numeric char
-  while(reader < ioctx.rdend)
+  while(reader < loader.inbuf_end)
   {
     if(*reader == '.')
     {
       dot = reader;
       if(comma && dot && comma == dot -1) return comma;
-      if(reader +1 == ioctx.rdend) return reader;
+      if(reader +1 == loader.inbuf_end) return reader;
     }
     else if(*reader == ',')
     {
       comma = reader;
       if(dot && comma && dot == comma -1) return dot;
-      if(reader +1 == ioctx.rdend) return reader;
+      if(reader +1 == loader.inbuf_end) return reader;
     }
     else if(delimiters.check(*reader))
     {
@@ -859,19 +866,11 @@ const char* Tokenizador::decimalTill()
 void Tokenizador::constructionLogic()
 {
   defaultDelimiters();
-  ioctx.rdbegin = nullptr;
-  ioctx.wrbegin = nullptr;
-  writeChar = &Tokenizador::rawWrite;
   
   if(casosEspeciales)
     extractToken = &Tokenizador::extractSpecialCaseToken;
   else
     extractToken = &Tokenizador::extractCommonCaseToken;
-
-  if(pasarAminuscSinAcentos)
-    normalizeChar = &Tokenizador::minWithoutAccent;
-  else
-    normalizeChar = &Tokenizador::rawCharReturn;
 }
 
 
