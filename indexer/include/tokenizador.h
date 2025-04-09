@@ -26,9 +26,11 @@ struct io_context {
     char* writepoint;
   }
   const char* frontpoint;
+
+  //TODO: io_context functions if needed
 };
 
-//TODO: refactor io_context to minimum (begin, end, current) and integrate as file_loader members
+
 struct file_loader {
   const char* inbuf;
   const char* inbuf_end;
@@ -156,21 +158,14 @@ private:
     0x0, 0x0, 0x0                                   // accented y, wtf, dieresy y
   };
 
-  using charnormalize_function = 
-
   iso_8859_1_bitvec delimiters;
   bool casosEspeciales;
   bool pasarAminuscSinAcentos;
   file_loader loader;
-  memory_pool mem_pool;
 
-  pair<const char*, const char*> (Tokenizador::*)(const char) extractToken;
-  char (Tokenizador::*)(const char) normalizeChar;
+  pair<const char*, const char*> (Tokenizador::*)() extractToken;
 
-  void ensureOutfileHasEnoughMem();
-  void setMemPool();
-  void unsetMemPool();
-  void putTerminatingChar(const char);
+  char normalizeChar(const char); //TODO: fix all normalizeChar calls and put conditionals on prenormalization of buffer
   void skipDelimiters(const bool leaveLastOne);
   bool isNumeric(const char) const;
   bool tkFile(const char* ifile, const char* ofile);
@@ -180,13 +175,9 @@ private:
   void tkAppend(const string& file, vector<string>& tokens);
   void tkDirAppend(const string& directory, vector<string>& tokens);
 
-  // Values for extractToken
+  // Values for extractToken (extract a token from the file_loader inbuf)
   pair<const char*, const char*> extractCommonCaseToken();
   pair<const char*, const char*> extractSpecialCaseToken();
-
-  // Values for normalizeChar
-  char rawCharReturn(const char);
-  char minWithoutAccent(const char);
 
   // Special case detection functions
   const char* multiwordTill();

@@ -20,13 +20,13 @@ file_loader::file_loader()
 
 bool file_loader::begin(const char* filename, const char* output_filename = nullptr)
 {
-  inbuf_fd = open(filename, O_RDONLY);
+  inbuf_fd = open(filename, O_RDWR);
   struct stat in_fileinfo;
   if(inbuf_fd < 0)
     return false;
 
   fstat(inbuf_fd, &in_fileinfo);
-  inbuf = (char*)mmap(nullptr, in_fileinfo.st_size, PROT_READ, MAP_SHARED, inbuf_fd, 0);
+  inbuf = (char*)mmap(nullptr, in_fileinfo.st_size, PROT_READ | PROT_WRITE, MAP_PRIVATE, inbuf_fd, 0);
   inbuf_size = in_fileinfo.st_size;
   readpoint = inbuf;
   frontpoint = inbuf;
@@ -370,12 +370,12 @@ void Tokenizador::Tokenizar(const string& str, list<string>& tokens)
   //TODO: make clear extractToken function parameters
   //TODO: probably remove mem_pool attribute
 
-  while(ioctx.rd_current < ioctx.rdend)
+  while(loader.frontpoint < loader.inbuf_end)
   {
-    ioctx.wr_current = ioctx.wrbegin;
-    tk = (this->*extractToken)('\0');
-    if(*tk != '\0') // empty string is nothing being written
-      tokens.push_back(tk);
+    tk = (this->*extractToken)();
+    if(tk.first != nullptr)
+      tokens.emplace_back(tk.first, tk.second);
+    //TODO: ensure that if special cases are applied, and if the element is a number and starts with point or comma -> push_front('0')
   }
   loader.mem_terminate();
 }
@@ -466,25 +466,26 @@ bool Tokenizador::PasarAminuscSinAcentos() const
 }
 
 
-void Tokenizador::putTerminatingChar(const char c)
+char Tokenizador::normalizeChar(const char c)
 {
-  if(ioctx.rd_current >= ioctx.rdend)
-    ioctx.rd_current -= (ioctx.rd_current - ioctx.rdend) +1;
-  (this->*writeChar)(); //To ensure buffer safety
-  --ioctx.wr_current;
-  *ioctx.wr_current = c;
-  ++ioctx.wr_current;
+  int16_t curChar = (int16_t)(uint8_t)c;
+  if(curChar >= CAPITAL_START_POINT && curChar <= CAPITAL_END_POINT)
+    curChar += Tokenizador::TOLOWER_OFFSET;
+  else if(curChar - ACCENT_START_POINT >= 0)
+    curChar += Tokenizador::accentRemovalOffsetVec[curChar - ACCENT_START_POINT];
+
+  return (char)curChar;
 }
 
 
 void Tokenizador::skipDelimiters(const bool leaveLastOne)
 {
-  if(!delimiters.check(*ioctx.rd_current)) return;
-  while(ioctx.rd_current < ioctx.rdend && delimiters.check(*ioctx.rd_current))
-    ++ioctx.rd_current;
+  if(!delimiters.check(*loader.frontpoint)) return;
+  while(loader.frontpoint < loader.inbuf_end && delimiters.check(*loader.frontpoint))
+    ++loader.frontpoint;
 
   if(leaveLastOne)
-    --ioctx.rd_current;
+    --loader.frontpoint;
 }
 
 
@@ -496,26 +497,22 @@ bool Tokenizador::isNumeric(const char c) const
 
 bool Tokenizador::tkFile(const char* ifile, const char* ofile)
 {
-  if(!loader.begin(ifile, ofile))
+  if(!loader.begin(i.c_str(), f.c_str()))
   {
     cerr << "ERROR: No existe el archivo: " << ifile << endl;
     return false;
   }
-  ioctx.rdbegin = loader.inbuf;
-  ioctx.rd_current = ioctx.rdbegin;
-  ioctx.rdend = ioctx.rdbegin + loader.inbuf_size;
-  ioctx.wrbegin = loader.outbuf;
-  ioctx.wr_current = ioctx.wrbegin;
-  ioctx.wrend = ioctx.wrbegin + loader.outbuf_size;
 
-  const char* tk;
-  while(ioctx.rd_current < ioctx.rdend)
+  //TODO: normalize the entire input file by a const disqualified pointer
+  pair<const char*, const char*> tk;
+  while(loader.frontpoint < loader.inbuf_end)
   {
-    (this->*extractToken)('\n');
-    ensureOutfileHasEnoughMem();
+    tk = (this->*extractToken)();
+    loader.write(tk.first, tk.second - tk.first);
+    //TODO: make the exception to prove if is a number or not (or generalize it)
   }
 
-  loader.terminate(ioctx.wr_current);
+  loader.terminate();
   return true;
 }
 
@@ -575,21 +572,15 @@ void Tokenizador::tkAppend(const string& filename, vector<string>& tokens)
 {
   loader.begin(filename.c_str());
   tokens.reseve(tokens.size() + (loader.inbuf_size >> 3));
-
-  ioctx.rdbegin = loader.inbuf;
-  ioctx.rd_current = ioctx.rdbegin;
-  ioctx.rdend = loader.inbuf + loader.inbuf_size;
-  setMemPool();
+  //TODO: correct with function please
 
   const char* tk;
-  while(ioctx.rd_current < ioctx.rdend)
+  while(loader.frontpoint < loader.inbuf_end)
   {
-    ioctx.wr_current = ioctx.wrbegin;
-    tk = (this->*extractToken)('\0');
+    tk = (this->*extractToken)();
     if(*tk != '\0') // empty string is nothing being written
       tokens.push_back(tk);
   }
-  unsetMemPool();
   loader.terminate();
 }
 
@@ -622,44 +613,41 @@ void Tokenizador::tkDirAppend(const string& dir_name, vector<string>& tokens)
 }
 
 
-const char* Tokenizador::extractCommonCaseToken(const char last)
+pair<const char*, const char*> Tokenizador::extractCommonCaseToken()
 {
-  const char *const ini_wrptr = ioctx.wr_current;
   skipDelimiters(false);
-  if(ioctx.rd_current == ioctx.rdend)
+  loader.readpoint = loader.frontpoint;
+  if(loader.frontpoint == loder.inbuf_end)
   {
-    *ioctx.wr_current = '\0';
-    return ini_wrptr;
+    return {nullptr, nullptr};
   }
-  while(ioctx.rd_current < ioctx.rdend && !delimiters.check(*ioctx.rd_current))
+  while(loader.frontpoint < loader.inbuf_end && !delimiters.check(*loader.frontpoint))
   {
-    (this->*writeChar)();
+    ++loader.frontpoint;
   }
 
-  putTerminatingChar(last);
-  return ini_wrptr;
+  return {loader.readpoint, loader.frontpoint};
 }
 
 
-const char* Tokenizador::extractSpecialCaseToken(const char last)
+pair<const char*, const char*> Tokenizador::extractSpecialCaseToken()
 {
   skipDelimiters(true);
-  const char *const ini_wrptr = ioctx.wr_current;
   const char* tk_end;
 
   tk_end = decimalTill();
   if(tk_end)
   {
-    if(*ioctx.rd_current == ',' || *ioctx.rd_current == '.')
+    if(*loader.frontpoint == ',' || *loader.frontpoint == '.')
     {
-      putTerminatingChar('0');
-      --ioctx.rd_current; // make rdptr stay the same
+      putTerminatingChar('0'); //TODO: substitute in favour of a normal write out of the function adding the zero char
+                               //TODO: outside of the function, make a put()
     }
   }
   else
   {
-    if(delimiters.check(*ioctx.rd_current))
-      ++ioctx.rd_current; // Pass delimiter
+    if(delimiters.check(*loader.frontpoint))
+      ++loader.frontpoint; // Pass delimiter
 
     tk_end = multiwordTill();
     if(!tk_end)
@@ -671,31 +659,10 @@ const char* Tokenizador::extractSpecialCaseToken(const char last)
   }
 
   if(!tk_end)
-    return extractCommonCaseToken(last);
+    return extractCommonCaseToken();
 
-  while(ioctx.rd_current < tk_end)
-    (this->*writeChar)();
-  putTerminatingChar(last);
-
-  return ini_wrptr;
-}
-
-
-extern inline char Tokenizador::rawCharReturn(const char c)
-{
-  return c;
-}
-
-
-char Tokenizador::minWithoutAccent(const char c)
-{
-  int16_t curChar = (int16_t)(uint8_t)c;
-  if(curChar >= CAPITAL_START_POINT && curChar <= CAPITAL_END_POINT)
-    curChar += Tokenizador::TOLOWER_OFFSET;
-  else if(curChar - ACCENT_START_POINT >= 0)
-    curChar += Tokenizador::accentRemovalOffsetVec[curChar - ACCENT_START_POINT];
-
-  return (char)curChar;
+  loader.frontpoint = tk_end;
+  return {loader.readpoint, tk_end};
 }
 
 
@@ -731,7 +698,7 @@ const char* Tokenizador::multiwordTill()
 //TODO: make url_delim constexpr
 const char* Tokenizador::urlTill()
 {
-  const char* reader = ioctx.rd_current;
+  const char* reader = loader.frontpoint;
   iso_8859_1_bitvec url_delim;
   url_delim.reset();
   url_delim.copy_from("_:/.?&-=#@");

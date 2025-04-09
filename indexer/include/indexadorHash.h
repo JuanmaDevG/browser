@@ -5,6 +5,7 @@
 #include <string>
 #include "indexadorInformacion.h"
 #include "tokenizador.h"
+#include "stemmer.h"
 
 using namespace std;
 
