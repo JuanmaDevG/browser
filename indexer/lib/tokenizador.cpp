@@ -103,7 +103,7 @@ bool file_loader::resize_outfile(const size_t sz)
   off_t checkpoint = writepoint - outbuf;
   if(ftruncate(outbuf_fd, sz) < 0) return false;
   outbuf = (char*)mremap(outbuf, outbuf_size, sz, MREMAP_MAYMOVE);
-  if(outbuf = MAP_FAILED)
+  if(outbuf == MAP_FAILED)
   {
     close(outbuf_fd);
     null_writepoints();
@@ -117,7 +117,7 @@ bool file_loader::resize_outfile(const size_t sz)
 }
 
 
-pair<const char*, const char*> file_loader::getline() const
+pair<const char*, const char*> file_loader::getline()
 {
   if(frontpoint >= inbuf_end) return {nullptr, nullptr};
   if(*frontpoint == '\n') ++frontpoint;
@@ -131,7 +131,7 @@ pair<const char*, const char*> file_loader::getline() const
 }
 
 
-bool file_loader::write(const void* buf, size_t sz)
+bool file_loader::write(const void* buf, const size_t sz)
 {
   if(outbuf_end - writepoint < sz)
   {
@@ -155,18 +155,18 @@ bool file_loader::put(const char c)
 }
 
 
-bool file_loader::mem_begin(const char* rdbuf, const size_t rdbuf_sz)
+void file_loader::mem_begin(const char* rdbuf, const size_t rdbuf_sz)
 {
   inbuf = rdbuf;
   inbuf_end = inbuf + rdbuf_sz;
-  inbuf_size = sz;
+  inbuf_size = rdbuf_sz;
   readpoint = inbuf;
   frontpoint = inbuf;
   inbuf_fd = 0;
 }
 
 
-void mem_terminate()
+void file_loader::mem_terminate()
 {
   null_readpoints();
 }
@@ -313,23 +313,21 @@ ostream& operator<<(ostream& os, const Tokenizador& tk)
 
 
 Tokenizador::Tokenizador(const string& delimitadoresPalabra, const bool casosEspeciales, const bool minuscSinAcentos) :
-  casosEspeciales(casosEspeciales), pasarAminuscSinAcentos(minuscSinAcentos)
+  casosEspeciales(casosEspeciales), pasarAminuscSinAcentos(minuscSinAcentos), loader()
 {
-  loader = {0};
   constructionLogic();
   delimiters.copy_from(delimitadoresPalabra);
 }
 
 
-Tokenizador::Tokenizador(const Tokenizador& tk) : casosEspeciales(tk.casosEspeciales), pasarAminuscSinAcentos(tk.pasarAminuscSinAcentos)
+Tokenizador::Tokenizador(const Tokenizador& tk) : casosEspeciales(tk.casosEspeciales), pasarAminuscSinAcentos(tk.pasarAminuscSinAcentos), loader()
 {
   constructionLogic();
   delimiters.copy_from(tk.delimiters);
-  loader = {0};
 }
 
 
-Tokenizador::Tokenizador() : casosEspeciales(true), pasarAminuscSinAcentos(false)
+Tokenizador::Tokenizador() : casosEspeciales(true), pasarAminuscSinAcentos(false), loader()
 {
   static const char* delimDefaults = ",;:.-/+*\\ '\"{}[]()<>¡!¿?&#=\t@";
   const char* i = delimDefaults;
@@ -339,7 +337,6 @@ Tokenizador::Tokenizador() : casosEspeciales(true), pasarAminuscSinAcentos(false
     delimiters.set(*i, true);
     ++i;
   }
-  loader = {0};
 }
 
 
@@ -504,7 +501,7 @@ bool Tokenizador::isNumeric(const char c) const
 
 bool Tokenizador::tkFile(const char* ifile, const char* ofile)
 {
-  if(!loader.begin(i.c_str(), f.c_str()))
+  if(!loader.begin(ifile, ofile))
   {
     cerr << "ERROR: No existe el archivo: " << ifile << endl;
     return false;
@@ -521,6 +518,7 @@ bool Tokenizador::tkFile(const char* ifile, const char* ofile)
   {
     tk = (this->*extractToken)();
     loader.write(tk.first, tk.second - tk.first);
+    loader.put('\n');
   }
 
   loader.terminate();
@@ -582,31 +580,40 @@ bool Tokenizador::tkDirectory(const char* dir_name, const size_t dir_len)
 void Tokenizador::tkAppend(const string& filename, vector<string>& tokens)
 {
   loader.begin(filename.c_str());
-  tokens.reseve(tokens.size() + (loader.inbuf_size >> 3));
-  //TODO: correct with function please
+  tokens.reserve(tokens.size() + (loader.inbuf_size >> 3));
+  if(pasarAminuscSinAcentos)
+  {
+    for(char* i = const_cast<char*>(loader.inbuf); i < loader.inbuf_end; ++i)
+      *i = normalizeChar(*i);
+  }
 
-  const char* tk;
+  pair<const char*, const char*> tk;
   while(loader.frontpoint < loader.inbuf_end)
   {
     tk = (this->*extractToken)();
-    if(*tk != '\0') // empty string is nothing being written
-      tokens.push_back(tk);
+    if(tk.first)
+    {
+      tokens.emplace_back(tk.first, tk.second);
+      if(*loader.readpoint == ',' || *loader.readpoint == '.')
+        tokens.back() = string(1, '0') + tokens.back();
+    }
   }
   loader.terminate();
 }
 
 
-void Tokenizador::tkDirAppend(const string& dir_name, vector<string>& tokens)
+bool Tokenizador::tkDirAppend(const string& dir_name, vector<string>& tokens)
 {
   DIR* dir;
   struct dirent* entry;
 
   if((dir = opendir(dir_name.c_str())) == nullptr)
   {
-    delete[] entry_name;
+    cerr << "ERROR: no se ha podido abrir el directorio " << dir_name << " porque no existe." << endl;
     return false;
   }
 
+  //TODO: very important, for all the functions that tokenize directory, write to avoid .tk files
   while((entry = readdir(dir)) != nullptr)
   {
     if(entry->d_name[0] == '.' && (entry->d_name[1] == '\0' || (entry->d_name[1] == '.')))
@@ -621,6 +628,7 @@ void Tokenizador::tkDirAppend(const string& dir_name, vector<string>& tokens)
       tkAppend(entry->d_name, tokens);
     }
   }
+  return true;
 }
 
 
@@ -628,7 +636,7 @@ pair<const char*, const char*> Tokenizador::extractCommonCaseToken()
 {
   skipDelimiters(false);
   loader.readpoint = loader.frontpoint;
-  if(loader.frontpoint == loder.inbuf_end)
+  if(loader.frontpoint >= loader.inbuf_end)
   {
     return {nullptr, nullptr};
   }
@@ -657,17 +665,17 @@ pair<const char*, const char*> Tokenizador::extractSpecialCaseToken()
     return {loader.readpoint, loader.frontpoint};
   }
 
-  if(delimiters.check(*loader.frontpoint))
-    ++loader.frontpoint; // Pass delimiter
+  if(delimiters.check(*loader.readpoint))
+    ++loader.readpoint; // Pass delimiter
 
   loader.frontpoint = multiwordTill();
   if(!loader.frontpoint)
     loader.frontpoint = urlTill();
-  else if(!loader.frontpoint)
+  if(!loader.frontpoint)
     loader.frontpoint = emailTill();
-  else if(!loader.frontpoint)
+  if(!loader.frontpoint)
     loader.frontpoint = acronymTill();
-  else if(!loader.frontpoint)
+  if(!loader.frontpoint)
     return extractCommonCaseToken();
 
   return {loader.readpoint, loader.frontpoint};

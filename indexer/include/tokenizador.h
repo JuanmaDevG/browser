@@ -5,6 +5,7 @@
 #include <list>
 #include <cstdint>
 #include <utility>
+#include <vector>
 
 using namespace std;
 
@@ -16,15 +17,15 @@ struct io_context {
   union {
     const char* cbegin;
     char* begin;
-  }
+  };
   union {
     const char* cend;
     char* end;
-  }
+  };
   union {
     const char* readpoint;
     char* writepoint;
-  }
+  };
   const char* frontpoint;
 
   //TODO: io_context functions if needed
@@ -45,14 +46,14 @@ struct file_loader {
   char* writepoint;
   int outbuf_fd;
 
-  file_loader::file_loader();
+  file_loader();
   bool begin(const char* in_filename, const char* out_filename);
   void terminate();
   void null_readpoints();
   void null_writepoints();
   bool resize_outfile(const size_t);
-  pair<const char*, const char*> getline() const;
-  bool write(void* buf, const size_t sz);
+  pair<const char*, const char*> getline();
+  bool write(const void* buf, const size_t sz);
   bool put(const char);
 
   void mem_begin(const char* rdbuf, const size_t rdbuf_sz);
@@ -69,7 +70,7 @@ struct memory_pool {
 
   void reset();
   bool resize(const size_t);
-  size_t write(const void* buf, const size_t sz);
+  bool write(const void* buf, const size_t sz);
   bool put(const char);
 };
 
@@ -163,7 +164,7 @@ private:
   bool pasarAminuscSinAcentos;
   file_loader loader;
 
-  pair<const char*, const char*> (Tokenizador::*)() extractToken;
+  pair<const char*, const char*> (Tokenizador::*extractToken)();
 
   char normalizeChar(const char); //TODO: fix all normalizeChar calls and put conditionals on prenormalization of buffer
   void skipDelimiters(const bool leaveLastOne);
@@ -173,7 +174,7 @@ private:
 
   // Functions for the indexer
   void tkAppend(const string& file, vector<string>& tokens);
-  void tkDirAppend(const string& directory, vector<string>& tokens);
+  bool tkDirAppend(const string& directory, vector<string>& tokens);
 
   // Values for extractToken (extract a token from the file_loader inbuf)
   pair<const char*, const char*> extractCommonCaseToken();

@@ -177,8 +177,8 @@ private:
     // Palabras de parada. El filtrado de palabras de parada se realizará, tanto en la pregunta como en los documentos, teniendo en cuenta el parámetro minuscSinAcentos y tipoStemmer. Es decir que se aplicará el mismo proceso a las palabras de parada almacenadas en el fichero antes de realizar el filtrado (p.ej. si se aplica el pasar a minúsculas los términos del documento/pregunta a indexar, para comprobar si se ha de eliminar el término, éste se comparará con la versión de palabras de parada en minúsculas). Esto se pide así para casos en los que en el documento/pregunta aparezca: "La casa de Él" y estén almacenadas como stopWords "la, el", si se activa el parámetro minuscSinAcentos, entonces debería filtrar "La, Él", si no hubiese estado activo ese parámetro, entonces no se hubiesen filtrado.
 
     string ficheroStopWords;
+    //TODO: probably add a stemmerPorter object as member
     Tokenizador tok;	
-    // TODO: Se inicializará con los parámetros del constructor: detectComp y minuscSinAcentos, los cuales determinarán qué término se ha de indexar (p.ej. si se activa minuscSinAcentos, entonces se guardarán los términos en minúsculas y sin acentos)
     string directorioIndice; //TODO: directorio donde se va a guardar el indice en el disco (si es "", se guarda en el mismo dir)
     int tipoStemmer;
     //TODO: mirar el algoritmo de stemming

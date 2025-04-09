@@ -4,54 +4,74 @@
 #include <string>
 #include <list>
 #include <cstdint>
+#include <utility>
+#include <vector>
 
 using namespace std;
 
 #define ISO_8859_SIZE 256
 #define DELIMITER_BIT_VEC_SIZE (ISO_8859_SIZE >> 3)               // Total of 256 bits (32 bytes to store ISO-8859 delimiter state machine)
-#define AMD64_REGISTER_VEC_SIZE (DELIMITER_BIT_VEC_SIZE >> 3)
 #define MEM_POOL_SIZE 256
 
+struct io_context {
+  union {
+    const char* cbegin;
+    char* begin;
+  };
+  union {
+    const char* cend;
+    char* end;
+  };
+  union {
+    const char* readpoint;
+    char* writepoint;
+  };
+  const char* frontpoint;
 
-struct io_context;
+  //TODO: io_context functions if needed
+};
 
-//TODO: bind io_context functions (may add io_context pointer)
+
 struct file_loader {
   const char* inbuf;
+  const char* inbuf_end;
   size_t inbuf_size;
-  char* outbuf;
-  size_t outbuf_size;
-  const char* outbuf_filename;
+  const char* readpoint;
+  const char* frontpoint;
+  int inbuf_fd;
 
+  char* outbuf;
+  char* outbuf_end;
+  size_t outbuf_size;
+  char* writepoint;
+  int outbuf_fd;
+
+  file_loader();
   bool begin(const char* in_filename, const char* out_filename);
-  void terminate(char *const remaining_writepoint);
+  void terminate();
   void null_readpoints();
   void null_writepoints();
-  void grow_outfile(size_t how_much, io_context& bound_ioc);
+  bool resize_outfile(const size_t);
+  pair<const char*, const char*> getline();
+  bool write(const void* buf, const size_t sz);
+  bool put(const char);
+
+  void mem_begin(const char* rdbuf, const size_t rdbuf_sz);
+  void mem_terminate();
 };
 
 
 struct memory_pool {
   char data[MEM_POOL_SIZE];
-  const char *const data_end = data + MEM_POOL_SIZE;
-  
-  void write(const void *const chunk, const size_t size, const off_t wrstart);
-  void read(void *const dst, const size_t size, const off_t rdstart);
-  size_t size();
+  char* buf = data;
+  char* buf_end = data + MEM_POOL_SIZE;
+  char* writepoint = buf;
+  size_t bufsize = MEM_POOL_SIZE;
 
-  static void mv(const void *const src, void *const dst, const size_t size);
-};
-
-
-struct io_context {
-  const char* rdbegin;
-  const char* rd_current;
-  const char* rdend;
-  char* wrbegin;
-  char* wr_current;
-  const char* wrend;
-
-  void swap(io_context&);
+  void reset();
+  bool resize(const size_t);
+  bool write(const void* buf, const size_t sz);
+  bool put(const char);
 };
 
 
@@ -67,9 +87,12 @@ struct iso_8859_1_bitvec {
 };
 
 
+class IndexadorHash;
+
 class Tokenizador
 {
   friend ostream& operator<<(ostream&, const Tokenizador&);
+  friend class IndexadorHash;
 
 public:
   Tokenizador (const string& delimitadoresPalabra, const bool kcasosEspeciales, const bool minuscSinAcentos);
@@ -136,41 +159,26 @@ private:
     0x0, 0x0, 0x0                                   // accented y, wtf, dieresy y
   };
 
-  using charwrite_function = void (Tokenizador::*)(void);
-  using charnormalize_function = char (Tokenizador::*)(const char);
-  using tkextract_function = const char* (Tokenizador::*)(const char);
-
-  uint8_t delimitadoresPalabra[DELIMITER_BIT_VEC_SIZE];
   iso_8859_1_bitvec delimiters;
   bool casosEspeciales;
   bool pasarAminuscSinAcentos;
   file_loader loader;
-  memory_pool mem_pool;
-  io_context ioctx;
-  tkextract_function extractToken;
-  charwrite_function writeChar;
-  charnormalize_function normalizeChar;
 
-  void ensureOutfileHasEnoughMem();
-  void setMemPool();
-  void unsetMemPool();
-  void putTerminatingChar(const char);
+  pair<const char*, const char*> (Tokenizador::*extractToken)();
+
+  char normalizeChar(const char); //TODO: fix all normalizeChar calls and put conditionals on prenormalization of buffer
   void skipDelimiters(const bool leaveLastOne);
   bool isNumeric(const char) const;
   bool tkFile(const char* ifile, const char* ofile);
   bool tkDirectory(const char* name, const size_t len);
 
-  // Values for extractToken
-  const char* extractCommonCaseToken(const char last_char);
-  const char* extractSpecialCaseToken(const char last_char);
+  // Functions for the indexer
+  void tkAppend(const string& file, vector<string>& tokens);
+  bool tkDirAppend(const string& directory, vector<string>& tokens);
 
-  // Values for writeChar:
-  void rawWrite();
-  void safeMemPoolWrite();
-
-  // Values for normalizeChar
-  char rawCharReturn(const char);
-  char minWithoutAccent(const char);
+  // Values for extractToken (extract a token from the file_loader inbuf)
+  pair<const char*, const char*> extractCommonCaseToken();
+  pair<const char*, const char*> extractSpecialCaseToken();
 
   // Special case detection functions
   const char* multiwordTill();
