@@ -177,7 +177,7 @@ private:
   bool tkDirectory(const char* name, const size_t len);
 
   // Functions for the indexer
-  void tkAppend(const string& file, vector<string>& tokens);
+  bool tkAppend(const string& file, vector<string>& tokens);
   bool tkDirAppend(const string& directory, vector<string>& tokens);
 
   // Values for extractToken (extract a token from the file_loader inbuf)

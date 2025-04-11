@@ -60,19 +60,29 @@ bool IndexadorHash::Indexar(const string& ficheroDocumentos)
   }
   vector<string> tokens;
   auto line = fl.getline();
-  string cur_file(line.first, line.second);
+  string doc_filename(line.first, line.second);
+  int curDocId = 1;
+  InfDoc infCurDoc;
+  InformacionTermino infCurTerm;
 
   while(line.first)
   {
-    tok.tkAppend(cur_file, tokens);
+    if(!tok.tkAppend(doc_filename, tokens))
+      continue;
+
+    //TODO: continue filling the collections
+
+    ++informacionColeccionDocs.numDocs;
+    infCurDoc.numPal = tokens.length();
     for(auto i = tokens.begin(); i != tokens.end(); i++)
       stemmer.stemmer(*i, tipoStemmer);
 
     //Finished tokenizing this shit
+    doc_filename.clear();
     line = fl.getline();
-    cur_file.clear();
-    cur_file.assign(line.first, line.second);
+    doc_filename.assign(line.first, line.second);
     tokens.clear();
+    ++curDocId;
   }
 
   fl.terminate();

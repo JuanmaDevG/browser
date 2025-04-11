@@ -53,7 +53,6 @@ private:
   int numPalDiferentes;	//TODO: recuerda no parada
   int tamBytes;
   Fecha fechaModificacion;
-  // Atributo correspondiente a la fecha y hora (completa) de modificación del documento. El tipo "Fecha/hora" lo elegirá/implementará el alumno
 };
 
 

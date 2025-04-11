@@ -596,9 +596,13 @@ bool Tokenizador::tkDirectory(const char* dir_name, const size_t dir_len)
 }
 
 
-void Tokenizador::tkAppend(const string& filename, vector<string>& tokens)
+bool Tokenizador::tkAppend(const string& filename, vector<string>& tokens)
 {
-  loader.begin(filename.c_str());
+  if(!loader.begin(filename.c_str()))
+  {
+    cerr << "ERROR: no existe el fichero "  << filename << " que se desea tokenizar.";
+    return false;
+  }
   tokens.reserve(tokens.size() + (loader.inbuf_size >> 3));
   if(pasarAminuscSinAcentos)
   {
@@ -622,6 +626,7 @@ void Tokenizador::tkAppend(const string& filename, vector<string>& tokens)
     }
   }
   loader.terminate();
+  return true;
 }
 
 
