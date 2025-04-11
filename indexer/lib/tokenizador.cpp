@@ -9,6 +9,13 @@
 #include <cstring>
 
 
+ostream& operator<<(ostream& os, const Fecha& f)
+{
+  os << f.tm_mday << '/' << (f.tm_mon +1) << '/' << f.tm_year << ' ' << f.tm_hour << ':' << f.tm_min << ':' << f.tm_sec;
+  return os;
+}
+
+
 file_loader::file_loader()
 {
   null_readpoints();
@@ -152,6 +159,14 @@ bool file_loader::put(const char c)
   *writepoint = c;
   ++writepoint;
   return true;
+}
+
+
+Fecha file_loader::get_mod_date() const
+{
+  struct stat inbuf_metadata;
+  fstat(inbuf_fd, &inbuf_metadata);
+  return *localtime(&inbuf_metadata.st_mtime);
 }
 
 
@@ -544,8 +559,12 @@ bool Tokenizador::tkDirectory(const char* dir_name, const size_t dir_len)
   while((entry = readdir(dir)) != nullptr)
   {
     entry_namlen = strlen(entry->d_name);
-    if(entry->d_name[0] == '.' && (entry->d_name[1] == '\0' || (entry->d_name[1] == '.')))
+    if(
+        (entry->d_name[0] == '.' && (entry->d_name[1] == '\0' || (entry->d_name[1] == '.')))
+        || (entry_namlen > 2 && entry->d_name[entry_namlen -3] == '.' && entry->d_name[entry_namlen -2] == 't' && entry->d_name[entry_namlen -1] == 'k'))
+    {
       continue;
+    }
 
     // +2 = '/' + '\0'
     if(dir_len + entry_namlen +2 > entry_len)
@@ -583,8 +602,12 @@ void Tokenizador::tkAppend(const string& filename, vector<string>& tokens)
   tokens.reserve(tokens.size() + (loader.inbuf_size >> 3));
   if(pasarAminuscSinAcentos)
   {
-    for(char* i = const_cast<char*>(loader.inbuf); i < loader.inbuf_end; ++i)
+    char* i = const_cast<char*>(loader.inbuf);
+    while(i < loader.inbuf_end)
+    {
       *i = normalizeChar(*i);
+      ++i;
+    }
   }
 
   pair<const char*, const char*> tk;
@@ -606,6 +629,7 @@ bool Tokenizador::tkDirAppend(const string& dir_name, vector<string>& tokens)
 {
   DIR* dir;
   struct dirent* entry;
+  string entry_name;
 
   if((dir = opendir(dir_name.c_str())) == nullptr)
   {
@@ -613,19 +637,19 @@ bool Tokenizador::tkDirAppend(const string& dir_name, vector<string>& tokens)
     return false;
   }
 
-  //TODO: very important, for all the functions that tokenize directory, write to avoid .tk files
   while((entry = readdir(dir)) != nullptr)
   {
-    if(entry->d_name[0] == '.' && (entry->d_name[1] == '\0' || (entry->d_name[1] == '.')))
-      continue;
+    entry_name = entry->d_name;
+    if(entry_name == "." || entry_name == ".." || entry_name.find(".tk", entry_name.length() - 3, 3)
+        continue;
 
     if(entry->d_type == DT_DIR)
     {
-      tkDirAppend(entry->d_name, tokens);
+      tkDirAppend(entry_name, tokens);
     }
     else
     {
-      tkAppend(entry->d_name, tokens);
+      tkAppend(entry_name, tokens);
     }
   }
   return true;

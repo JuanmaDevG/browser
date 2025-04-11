@@ -9,18 +9,6 @@ using namespace std;
 class InfTermDoc;
 class IndexadorHash;
 
-struct Fecha {
-  uint16_t aa;
-  uint8_t mm;
-  uint8_t dd;
-
-  uint8_t hour;
-  uint8_t min;
-  uint8_t sec;
-
-  Fecha& operator=(const Fecha&);
-};
-
 class InformacionTermino { 
   friend ostream& operator<<(ostream& s, const InformacionTermino& p);
   friend class IndexadorInformacion;

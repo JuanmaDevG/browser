@@ -180,6 +180,7 @@ private:
     //TODO: probably add a stemmerPorter object as member
     Tokenizador tok;	
     string directorioIndice; //TODO: directorio donde se va a guardar el indice en el disco (si es "", se guarda en el mismo dir)
+    stemmerPorter stemmer;
     int tipoStemmer;
     //TODO: mirar el algoritmo de stemming
     // 0 = no se aplica stemmer: se indexa el término tal y como aparece tokenizado

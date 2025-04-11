@@ -1,17 +1,6 @@
 #include "indexadorInformacion.h"
 
 
-Fecha& Fecha::operator=(const Fecha& f)
-{
-  aa = f.aa;
-  mm = f.mm;
-  dd = f.dd;
-  hour = f.hour;
-  min = f.min;
-  sec = f.sec;
-}
-
-
 InformacionTermino::InformacionTermino(const InformacionTermino & it) : ftc(it.ftc), l_docs(it.l_docs) {}
 
 

@@ -5,11 +5,11 @@
 using namespace std;
 
 IndexadorHash::IndexadorHash() : indice(), indiceDocs(), informacionColeccionDocs(), indicePregunta(), infPregunta(), stopWords(), 
-  tok(), tipoStemmer(0), pregunta(""), ficheroStopWords(""), directorioIndice(""), tipoStemmer(0), almacenarPosTerm(false) {}
+  tok(), tipoStemmer(0), stemmer(), pregunta(""), ficheroStopWords(""), directorioIndice(""), tipoStemmer(0), almacenarPosTerm(false) {}
 
 IndexadorHash::IndexadorHash(const string& fichStopWords, const string& delimitadores, const bool detectComp, const bool minuscSinAcentos, const string& dirIndice, const int tStemmer, const bool almPosTerm) :
   indice(), indiceDocs(), informacionColeccionDocs(), pregunta(""), indicePregunta(), infPregunta(), ficheroStopWords(fichStopWords), tok(delimitadores, detectComp, minuscSinAcentos), directorioIndice(dirIndice), 
-  tipoStemmer(tStemmer), almacenarPosTerm(almPosTerm)
+  tipoStemmer(tStemmer), stemmer(), almacenarPosTerm(almPosTerm)
 {
   if(!tok.loader.begin(ficheroStopWords))
   {
@@ -19,11 +19,11 @@ IndexadorHash::IndexadorHash(const string& fichStopWords, const string& delimita
   }
 
   stopWords.reserve(tok.loader.inbuf_size >> 3);
-  auto reader = tok.loader.getline(0);
+  auto reader = tok.loader.getline();
   while(reader.first)
   {
     stopWords.emplace(reader.first, reader.second);
-    reader = tok.loader.getline((reader.second - reader.first) +1);
+    reader = tok.loader.getline();
   }
   tok.loader.terminate();
 }
@@ -45,6 +45,7 @@ IndexadorHash& IndexadorHash::operator=(const IndexadorHash& idx)
   tok = idx.tok;
   directorioIndice = idx.directorioIndice;
   tipoStemmer = idx.tipoStemmer;
+  stemmer = idx.stemmer;
   almacenarPosTerm = idx.almacenarPosTerm;
 }
 
@@ -64,9 +65,14 @@ bool IndexadorHash::Indexar(const string& ficheroDocumentos)
   while(line.first)
   {
     tok.tkAppend(cur_file, tokens);
+    for(auto i = tokens.begin(); i != tokens.end(); i++)
+      stemmer.stemmer(*i, tipoStemmer);
+
+    //Finished tokenizing this shit
     line = fl.getline();
+    cur_file.clear();
     cur_file.assign(line.first, line.second);
-    //TODO: pop tokens and emplace them back
+    tokens.clear();
   }
 
   fl.terminate();

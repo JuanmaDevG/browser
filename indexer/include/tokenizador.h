@@ -6,12 +6,15 @@
 #include <cstdint>
 #include <utility>
 #include <vector>
+#include <ctime>
 
 using namespace std;
 
 #define ISO_8859_SIZE 256
 #define DELIMITER_BIT_VEC_SIZE (ISO_8859_SIZE >> 3)               // Total of 256 bits (32 bytes to store ISO-8859 delimiter state machine)
 #define MEM_POOL_SIZE 256
+
+struct tm Fecha;
 
 struct io_context {
   union {
@@ -55,6 +58,7 @@ struct file_loader {
   pair<const char*, const char*> getline();
   bool write(const void* buf, const size_t sz);
   bool put(const char);
+  Fecha get_mod_date() const; //TODO: return the date from fstat
 
   void mem_begin(const char* rdbuf, const size_t rdbuf_sz);
   void mem_terminate();
