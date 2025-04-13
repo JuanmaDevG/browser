@@ -33,14 +33,15 @@ public:
   InfTermDoc& operator= (const InfTermDoc &);
 private:
   int ft;
-  list<int> posTerm;	
+  list<int> posTerm;
 };
 
 
-class InfDoc { 
+class InfDoc {
   friend ostream& operator<<(ostream& s, const InfDoc& p);
   friend class IndexadorInformacion;
 public:
+  InfDoc(const int idDoc);
   InfDoc (const InfDoc &);
   InfDoc ();	
   ~InfDoc ();

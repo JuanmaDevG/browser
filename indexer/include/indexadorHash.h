@@ -177,16 +177,12 @@ private:
     // Palabras de parada. El filtrado de palabras de parada se realizará, tanto en la pregunta como en los documentos, teniendo en cuenta el parámetro minuscSinAcentos y tipoStemmer. Es decir que se aplicará el mismo proceso a las palabras de parada almacenadas en el fichero antes de realizar el filtrado (p.ej. si se aplica el pasar a minúsculas los términos del documento/pregunta a indexar, para comprobar si se ha de eliminar el término, éste se comparará con la versión de palabras de parada en minúsculas). Esto se pide así para casos en los que en el documento/pregunta aparezca: "La casa de Él" y estén almacenadas como stopWords "la, el", si se activa el parámetro minuscSinAcentos, entonces debería filtrar "La, Él", si no hubiese estado activo ese parámetro, entonces no se hubiesen filtrado.
 
     string ficheroStopWords;
-    //TODO: probably add a stemmerPorter object as member
-    Tokenizador tok;	
+    Tokenizador tok;
     string directorioIndice; //TODO: directorio donde se va a guardar el indice en el disco (si es "", se guarda en el mismo dir)
     stemmerPorter stemmer;
-    int tipoStemmer;
-    //TODO: mirar el algoritmo de stemming
-    // 0 = no se aplica stemmer: se indexa el término tal y como aparece tokenizado
-    // Los siguientes valores harán que los términos a indexar se les aplique el stemmer y se almacene solo dicho stem.
-    // 1 = stemmer de Porter para español
-    // 2 = stemmer de Porter para inglés
-    // Para el stemmer de Porter se utilizarán los archivos stemmer.cpp y stemmer.h, concretamente las funciones de nombre "stemmer"
+    int tipoStemmer; // Puede: 0 (no), 1 (español), 2 (inglés)
     bool almacenarPosTerm;
+    int nextId;
+
+    static const char* indexDefaultFilename = "index.idx";
 };

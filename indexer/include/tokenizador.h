@@ -58,10 +58,12 @@ struct file_loader {
   pair<const char*, const char*> getline();
   bool write(const void* buf, const size_t sz);
   bool put(const char);
-  Fecha get_mod_date() const; //TODO: return the date from fstat
+  Fecha get_mod_date() const;
 
   void mem_begin(const char* rdbuf, const size_t rdbuf_sz);
   void mem_terminate();
+
+  static Fecha get_mod_date(const char* filename);
 };
 
 

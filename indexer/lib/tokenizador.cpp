@@ -187,6 +187,17 @@ void file_loader::mem_terminate()
 }
 
 
+Fecha file_loader::get_mod_date(const char* filename)
+{
+  int fd = open(filename);
+  if(fd < 0) return {0, 0, 0, 0, 0, 0, 0, 0, 0};
+  struct stat file_stat;
+  fstat(fd, &file_stat);
+  close(fd);
+  return *localtime(&file_stat.st_mtime);
+}
+
+
 void memory_pool::reset()
 {
   if(buf != data)
@@ -551,6 +562,7 @@ bool Tokenizador::tkDirectory(const char* dir_name, const size_t dir_len)
 
   if((dir = opendir(dir_name)) == nullptr)
   {
+    cerr << "ERROR: El directorio " << dir_name << " no existe o el usuario no tiene permiso de acceder." << endl;
     delete[] entry_name;
     return false;
   }

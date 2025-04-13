@@ -5,11 +5,12 @@
 using namespace std;
 
 IndexadorHash::IndexadorHash() : indice(), indiceDocs(), informacionColeccionDocs(), indicePregunta(), infPregunta(), stopWords(), 
-  tok(), tipoStemmer(0), stemmer(), pregunta(""), ficheroStopWords(""), directorioIndice(""), tipoStemmer(0), almacenarPosTerm(false) {}
+  tok(), tipoStemmer(0), stemmer(), pregunta(""), ficheroStopWords(""), directorioIndice(""), tipoStemmer(0), almacenarPosTerm(false),
+  nextId(1) {}
 
 IndexadorHash::IndexadorHash(const string& fichStopWords, const string& delimitadores, const bool detectComp, const bool minuscSinAcentos, const string& dirIndice, const int tStemmer, const bool almPosTerm) :
   indice(), indiceDocs(), informacionColeccionDocs(), pregunta(""), indicePregunta(), infPregunta(), ficheroStopWords(fichStopWords), tok(delimitadores, detectComp, minuscSinAcentos), directorioIndice(dirIndice), 
-  tipoStemmer(tStemmer), stemmer(), almacenarPosTerm(almPosTerm)
+  tipoStemmer(tStemmer), stemmer(), almacenarPosTerm(almPosTerm), nextId(1)
 {
   if(!tok.loader.begin(ficheroStopWords))
   {
@@ -27,6 +28,19 @@ IndexadorHash::IndexadorHash(const string& fichStopWords, const string& delimita
   }
   tok.loader.terminate();
 }
+
+
+IndexadorHash::IndexadorHash(const string& dirIndice) : directorioIndice(dirIndice)
+{
+  RecuperarIndexacion(dirIndice);
+}
+
+
+IndexadorHash::IndexadorHash(const IndexadorHash& idx) : indice(idx.indice), indiceDocs(idx.indiceDocs),
+  informacionColeccionDocs(idx.informacionColeccionDocs), indicePregunta(idx.indicePregunta), infPregunta(idx.infPregunta),
+  stopWords(idx.stopWords), tok(idx.tok), tipoStemmer(idx.tipoStemmer), stemmer(idx.stemmer), pregunta(idx.pregunta),
+  ficheroStopWords(idx.ficheroStopWords), directorioIndice(idx.directorioIndice), tipoStemmer(idx.tipoStemmer), stemmer(),
+  almacenarPosTerm(idx.almacenarPosTerm), nextId(idx.nextId) {}
 
 
 IndexadorHash::~IndexadorHash() {}
@@ -62,7 +76,6 @@ bool IndexadorHash::Indexar(const string& ficheroDocumentos)
   auto line = fl.getline();
   string doc_filename(line.first, line.second);
   int curDocId = 1;
-  InfDoc infCurDoc;
   InformacionTermino infCurTerm;
 
   while(line.first)
@@ -70,12 +83,28 @@ bool IndexadorHash::Indexar(const string& ficheroDocumentos)
     if(!tok.tkAppend(doc_filename, tokens))
       continue;
 
-    //TODO: continue filling the collections
+    InformacionTermino& infTerm = indice[doc_filename];
+    InfDoc& infDoc = indiceDocs[doc_filename]; 
+    if(infDoc.idDoc > 0) // Was previously inidexed
+    {
+      cerr << "WARNING: el documento " << doc_filename << " ya estaba indexado.\n";
+      Fecha mod_date = file_loader::get_mod_date(doc_filename.c_str());
+      if(!(difftime(mktime(mod_date), mktime(infDoc.fechaModificacion)) > 0))
+        continue;
+    }
+    else
+    {
+      infDoc.idDoc = nextId;
+      ++nextId;
+    }
 
     ++informacionColeccionDocs.numDocs;
-    infCurDoc.numPal = tokens.length();
+    informacionColeccionDocs.numTotalPal += tokens.size();
+    infCurDoc.numPal = tokens.size();
     for(auto i = tokens.begin(); i != tokens.end(); i++)
+    {
       stemmer.stemmer(*i, tipoStemmer);
+    }
 
     //Finished tokenizing this shit
     doc_filename.clear();
@@ -85,6 +114,7 @@ bool IndexadorHash::Indexar(const string& ficheroDocumentos)
     ++curDocId;
   }
 
+  cerr << flush;
   fl.terminate();
 }
 

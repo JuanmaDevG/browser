@@ -43,8 +43,11 @@ InfTermDoc& InformacionTermino::operator=(const InfTermDoc & itd)
 }
 
 
+InfDoc::InfDoc(const int idDoc) : idDoc(idDoc), numPal(0), numPalSinParada(0), tamBytes(0), fechaModificacion()  {}
+
+
 InfDoc::InfDoc(const InfDoc & infd) : idDoc(infd.idDoc), numPal(infd.numPal), numPalSinParada(infd.numPalSinParada), 
-  tambytes(infd.tamBytes), fechaModificacion(infd.fechaModificacion) {}
+  tambytes(infd.tamBytes), fechaModificacion() {}
 
 
 InfDoc::InfDoc() : idDoc(0), numPal(0), numPalSinParada(0), tambytes(0) fechaModificacion({0, 0, 0, 0, 0, 0}) {}
