@@ -80,7 +80,9 @@ bool IndexadorHash::Indexar(const string& ficheroDocumentos)
 
   while(line.first)
   {
-    //TODO: ensure the file can be open ---------------------------------------------------------------------------------------------------
+    if(!file_loader::exists(doc_filename.c_str()))
+      goto loop_end;
+
     InfDoc& infDoc = indiceDocs[doc_filename]; 
     if(infDoc.idDoc > 0) // Was previously inidexed
     {

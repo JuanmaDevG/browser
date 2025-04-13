@@ -65,6 +65,7 @@ struct file_loader {
 
   static Fecha get_mod_date(const char* filename);
   static int get_size(const char* filename);
+  static bool exists(const char* filename);
 };
 
 

@@ -209,6 +209,14 @@ int file_loader::get_size(const char* filename)
 }
 
 
+bool file_loader::exists(const char* filename)
+{
+  int fd = open(filename, O_RDONLY);
+  close(fd);
+  return fd != -1;
+}
+
+
 void memory_pool::reset()
 {
   if(buf != data)
