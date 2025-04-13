@@ -23,7 +23,8 @@ IndexadorHash::IndexadorHash(const string& fichStopWords, const string& delimita
   auto reader = tok.loader.getline();
   while(reader.first)
   {
-    stopWords.emplace(reader.first, reader.second);
+    string& token = *stopWords.emplace(reader.first, reader.second).first;
+    stemmer.stemmer(token, tipostemmer);
     reader = tok.loader.getline();
   }
   tok.loader.terminate();
@@ -75,47 +76,70 @@ bool IndexadorHash::Indexar(const string& ficheroDocumentos)
   vector<string> tokens;
   auto line = fl.getline();
   string doc_filename(line.first, line.second);
-  int curDocId = 1;
   InformacionTermino infCurTerm;
 
   while(line.first)
   {
-    if(!tok.tkAppend(doc_filename, tokens))
-      continue;
-
-    InformacionTermino& infTerm = indice[doc_filename];
+    //TODO: ensure the file can be open ---------------------------------------------------------------------------------------------------
     InfDoc& infDoc = indiceDocs[doc_filename]; 
     if(infDoc.idDoc > 0) // Was previously inidexed
     {
       cerr << "WARNING: el documento " << doc_filename << " ya estaba indexado.\n";
       Fecha mod_date = file_loader::get_mod_date(doc_filename.c_str());
       if(!(difftime(mktime(mod_date), mktime(infDoc.fechaModificacion)) > 0))
-        continue;
+        goto loop_end;
+      //Reindex doc with that id
+      //So just erase information
     }
-    else
+    else // New document
     {
       infDoc.idDoc = nextId;
       ++nextId;
+      ++informacionColeccionDocs.numDocs;
     }
 
-    ++informacionColeccionDocs.numDocs;
+    if(!tok.tkAppend(doc_filename, tokens)) goto loop_end;
+
+    infDoc.fechaModificacion = file_loader::get_mod_date(doc_filename.c_str());
+    infDoc.numPal = tokens.size();
     informacionColeccionDocs.numTotalPal += tokens.size();
-    infCurDoc.numPal = tokens.size();
-    for(auto i = tokens.begin(); i != tokens.end(); i++)
+    infDoc.numPal = tokens.size();
+    infDoc.tamBytes = file_loader::get_size(doc_filename.c_str());
+    informacionColeccionDocs.tamBytes += infDoc.tamBytes;
+
+    int posTerm = 0;
+    for(auto i = tokens.begin(); i != tokens.end(); i++, ++posTerm)
     {
       stemmer.stemmer(*i, tipoStemmer);
+      if(stopWords.find(*i) != stopWords.end())
+        continue;
+
+      ++informacionColeccionDocs.numTotalPalSinParada;
+      ++infDoc.numPalSinParada;
+
+      InformacionTermino& infTerm = indice[*i];
+      if(infTerm.ftc == 0)
+        ++informacionColeccionDocs.numTotalPalDiferentes;
+
+      ++infTerm.ftc;
+      InfTermDoc& itd = infTerm.l_docs[infDoc.idDoc];
+      if(itd.ft == 0)
+        ++infDoc.numPalDiferentes;
+      ++itd.ft;
+      if(almacenarPosTerm)
+        itd.posTerm.push_back(posTerm);
     }
 
-    //Finished tokenizing this shit
-    doc_filename.clear();
-    line = fl.getline();
-    doc_filename.assign(line.first, line.second);
-    tokens.clear();
-    ++curDocId;
+    loop_end:
+      doc_filename.clear();
+      line = fl.getline();
+      doc_filename.assign(line.first, line.second);
+      tokens.clear();
   }
 
   cerr << flush;
   fl.terminate();
+  return true;
 }
 
 

@@ -189,12 +189,23 @@ void file_loader::mem_terminate()
 
 Fecha file_loader::get_mod_date(const char* filename)
 {
-  int fd = open(filename);
+  int fd = open(filename, O_RDONLY);
   if(fd < 0) return {0, 0, 0, 0, 0, 0, 0, 0, 0};
   struct stat file_stat;
   fstat(fd, &file_stat);
   close(fd);
   return *localtime(&file_stat.st_mtime);
+}
+
+
+int file_loader::get_size(const char* filename)
+{
+  int fd = open(filename, O_RDONLY);
+  if(fd < 0) return 0;
+  struct stat file_stat;
+  fstat(fd, &file_stat);
+  close(fd);
+  return file_stat.st_size;
 }
 
 

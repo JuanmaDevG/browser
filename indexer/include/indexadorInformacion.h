@@ -11,11 +11,11 @@ class IndexadorHash;
 
 class InformacionTermino { 
   friend ostream& operator<<(ostream& s, const InformacionTermino& p);
-  friend class IndexadorInformacion;
+  friend class IndexadorHash;
 public:
-  InformacionTermino (const InformacionTermino &);
-  InformacionTermino ();
-  ~InformacionTermino ();
+  InformacionTermino(const InformacionTermino &);
+  InformacionTermino();
+  ~InformacionTermino();
   InformacionTermino& operator= (const InformacionTermino &);
 private:
   int ftc;
@@ -25,11 +25,11 @@ private:
 
 class InfTermDoc {
   friend ostream& operator<<(ostream& s, const InfTermDoc& p);
-  friend class IndexadorInformacion;
+  friend class IndexadorHash;
 public:
-  InfTermDoc (const InfTermDoc &);
-  InfTermDoc ();
-  ~InfTermDoc ();
+  InfTermDoc(const InfTermDoc &);
+  InfTermDoc();
+  ~InfTermDoc();
   InfTermDoc& operator= (const InfTermDoc &);
 private:
   int ft;
@@ -39,19 +39,18 @@ private:
 
 class InfDoc {
   friend ostream& operator<<(ostream& s, const InfDoc& p);
-  friend class IndexadorInformacion;
+  friend class IndexadorHash;
 public:
   InfDoc(const int idDoc);
-  InfDoc (const InfDoc &);
-  InfDoc ();	
-  ~InfDoc ();
+  InfDoc(const InfDoc &);
+  InfDoc();	
+  ~InfDoc();
   InfDoc & operator= (const InfDoc &);
 private:
   int idDoc;
-  // TODO: El primer documento indexado en la colección será el identificador 1
-  int numPal;	// Nº total de palabras del documento
+  int numPal;
   int numPalSinParada;
-  int numPalDiferentes;	//TODO: recuerda no parada
+  int numPalDiferentes; // No stopwords
   int tamBytes;
   Fecha fechaModificacion;
 };
@@ -59,27 +58,24 @@ private:
 
 class InfColeccionDocs { 
   friend ostream& operator<<(ostream& s, const InfColeccionDocs& p);
-  friend class IndexadorInformacion;
+  friend class IndexadorHash;
 public:
   InfColeccionDocs (const InfColeccionDocs &);
   InfColeccionDocs ();
   ~InfColeccionDocs ();
   InfColeccionDocs & operator= (const InfColeccionDocs &);
 private:
-  int numDocs;	// Nº total de documentos en la colección
+  int numDocs;
   int numTotalPal;
-  // Nº total de palabras en la colección
   int numTotalPalSinParada;
-  // Nº total de palabras sin stop-words en la colección 
-  int numTotalPalDiferentes;	
-  // Nº total de palabras diferentes en la colección que no sean stop-words (sin acumular la frecuencia de cada una de ellas)
-  int tamBytes;	// Tamaño total en bytes de la colección
+  int numTotalPalDiferentes;  // No stopwords
+  int tamBytes;               // All collection
 };
 
 
 class InformacionTerminoPregunta { 
   friend ostream& operator<<(ostream& s, const InformacionTerminoPregunta& p);
-  friend class IndexadorInformacion;
+  friend class IndexadorHash;
 public:
   InformacionTerminoPregunta (const InformacionTerminoPregunta &);
   InformacionTerminoPregunta ();
@@ -95,7 +91,7 @@ private:
 
 class InformacionPregunta { 
   friend ostream& operator<<(ostream& s, const InformacionPregunta& p);
-  friend class IndexadorInformacion;
+  friend class IndexadorHash;
 public:
   InformacionPregunta(const InformacionPregunta &);
   InformacionPregunta();

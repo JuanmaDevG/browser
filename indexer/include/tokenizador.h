@@ -64,6 +64,7 @@ struct file_loader {
   void mem_terminate();
 
   static Fecha get_mod_date(const char* filename);
+  static int get_size(const char* filename);
 };
 
 
