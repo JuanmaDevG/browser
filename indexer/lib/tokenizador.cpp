@@ -25,6 +25,7 @@ file_loader::file_loader()
 
 bool file_loader::begin(const char* filename, const char* output_filename = nullptr)
 {
+  if(!filename) goto no_input_file;
   inbuf_fd = open(filename, O_RDONLY);
   struct stat in_fileinfo;
   if(inbuf_fd < 0)
@@ -37,6 +38,7 @@ bool file_loader::begin(const char* filename, const char* output_filename = null
   frontpoint = inbuf;
   inbuf_end = inbuf + inbuf_size;
 
+  no_input_file:
   if(!output_filename) return true;
   outbuf_fd = open(output_filename, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR);
   if(outbuf_fd < 0)
@@ -66,10 +68,11 @@ bool file_loader::begin(const char* filename, const char* output_filename = null
 
 void file_loader::terminate()
 {
-  if(!inbuf) return;
+  if(!inbuf) goto no_inbuf;
   munmap(const_cast<char*>(inbuf), inbuf_size);
   close(inbuf_fd);
 
+  no_inbuf:
   if(outbuf) {
     munmap(outbuf, outbuf_size);
     if(writepoint < outbuf_end)  // Adjust filesize
@@ -107,6 +110,7 @@ extern inline void file_loader::null_writepoints()
 
 bool file_loader::resize_outfile(const size_t sz)
 {
+  if(!outbuf) return false;
   off_t checkpoint = writepoint - outbuf;
   if(ftruncate(outbuf_fd, sz) < 0) return false;
   outbuf = (char*)mremap(outbuf, outbuf_size, sz, MREMAP_MAYMOVE);
@@ -676,7 +680,7 @@ bool Tokenizador::tkDirAppend(const string& dir_name, vector<string>& tokens)
   while((entry = readdir(dir)) != nullptr)
   {
     entry_name = entry->d_name;
-    if(entry_name == "." || entry_name == ".." || entry_name.find(".tk", entry_name.length() - 3, 3)
+    if(entry_name == "." || entry_name == ".." || entry_name.find(".tk", entry_name.length() - 3, 3))
         continue;
 
     if(entry->d_type == DT_DIR)

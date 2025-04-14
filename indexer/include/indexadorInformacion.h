@@ -16,7 +16,7 @@ public:
   InformacionTermino(const InformacionTermino &);
   InformacionTermino();
   ~InformacionTermino();
-  InformacionTermino& operator= (const InformacionTermino &);
+  InformacionTermino& operator=(const InformacionTermino &);
 private:
   int ftc;
   unordered_map<int, InfTermDoc> l_docs; 
@@ -89,7 +89,7 @@ private:
 };
 
 
-class InformacionPregunta { 
+class InformacionPregunta {
   friend ostream& operator<<(ostream& s, const InformacionPregunta& p);
   friend class IndexadorHash;
 public:
