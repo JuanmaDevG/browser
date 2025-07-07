@@ -375,7 +375,9 @@ void Tokenizador::Tokenizar(const string& str, list<string>& tokens)
     if(tk.first != nullptr)
     {
       tokens.emplace_back(tk.first, tk.second);
-      if(*loader.readpoint == ',' || *loader.readpoint == '.')
+      if(
+          (*loader.readpoint == ',' || *loader.readpoint == '.')
+          && casosEspeciales && delimiters.check(',') && delimiters.check('.'))
       {
         tokens.back() = string(1, '0') + tokens.back();
       }
@@ -517,6 +519,7 @@ bool Tokenizador::tkFile(const char* ifile, const char* ofile)
   while(loader.frontpoint < loader.inbuf_end)
   {
     tk = (this->*extractToken)();
+    if(tk.first == nullptr) break;
     loader.write(tk.first, tk.second - tk.first);
     loader.put('\n');
   }
@@ -666,6 +669,11 @@ pair<const char*, const char*> Tokenizador::extractSpecialCaseToken()
 
   if(delimiters.check(*loader.readpoint))
     ++loader.readpoint; // Pass delimiter
+  if(*loader.readpoint == '\0')
+  {
+    loader.frontpoint = loader.readpoint;
+    return {nullptr, nullptr};
+  }
 
   loader.frontpoint = multiwordTill();
   if(!loader.frontpoint)
@@ -674,10 +682,13 @@ pair<const char*, const char*> Tokenizador::extractSpecialCaseToken()
     loader.frontpoint = emailTill();
   if(!loader.frontpoint)
     loader.frontpoint = acronymTill();
-  if(!loader.frontpoint)
-    return extractCommonCaseToken();
 
-  return {loader.readpoint, loader.frontpoint};
+  if(loader.frontpoint)
+    return {loader.readpoint, loader.frontpoint};
+  else
+    loader.frontpoint = loader.readpoint;
+
+  return extractCommonCaseToken();
 }
 
 
@@ -822,48 +833,24 @@ const char* Tokenizador::decimalTill()
   if(!(delimiters.check('.') && delimiters.check(',')))
     return nullptr;
   const char* reader = loader.readpoint;
-  const char *dot = nullptr, *comma = nullptr;
 
-  if(*reader == '.')
-  {
-    dot = reader;
-    ++reader;
-  }
-  else if(*reader == ',')
-  {
-    comma = reader;
-    ++reader;
-  }
+  // Guarantee at least one numeric char
+  if(*reader == '.' || *reader == ',') ++reader;
+  else if(delimiters.check(*reader)) ++loader.readpoint, ++reader;
 
-  if(!isNumeric(*reader))
-    return nullptr;
-  else ++reader;
+  if(!isNumeric(*reader)) return nullptr;
+  ++reader;
 
-  // Guaranteed at least one numeric char
   while(reader < loader.inbuf_end)
   {
-    if(*reader == '.')
+    if(delimiters.check(*reader))
     {
-      dot = reader;
-      if(comma && dot && comma == dot -1) return comma;
-      if(reader +1 == loader.inbuf_end) return reader;
-    }
-    else if(*reader == ',')
-    {
-      comma = reader;
-      if(dot && comma && dot == comma -1) return dot;
-      if(reader +1 == loader.inbuf_end) return reader;
-    }
-    else if(delimiters.check(*reader))
-    {
-      if(comma == reader -1 || dot == reader -1) // Cut the separator if useless
-        --reader;
-      return reader;
+      if(!(*reader == '.' || *reader == ',') || delimiters.check(*(reader +1)))
+        return reader;
     }
     else if(!isNumeric(*reader))
-    {
       return nullptr;
-    }
+
     ++reader;
   }
   return reader;
