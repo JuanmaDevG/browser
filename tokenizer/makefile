@@ -1,4 +1,6 @@
-.PHONY= clean
+.PHONY: clean
+
+#TODO: cambiar todo el makefile
 
 CC=g++
 OPTIONS= -g

@@ -363,6 +363,7 @@ void Tokenizador::Tokenizar(const string& str, list<string>& tokens)
   string str_copy(str);
   if(pasarAminuscSinAcentos)
   {
+    //TODO: make a fully constant-time lookup table
     for(auto i = str_copy.begin(); i != str_copy.end(); i++)
       *i = normalizeChar(*i);
   }
@@ -471,6 +472,7 @@ bool Tokenizador::PasarAminuscSinAcentos() const
 }
 
 
+//TODO: remove this and just place a loop
 char Tokenizador::normalizeChar(const char c)
 {
   int16_t curChar = (int16_t)(uint8_t)c;
