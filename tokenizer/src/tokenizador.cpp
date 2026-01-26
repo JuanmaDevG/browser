@@ -277,9 +277,9 @@ void iso_8859_1_bitvec::copy_to(iso_8859_1_bitvec& dst) const
 ostream& operator<<(ostream& os, const Tokenizador& tk)
 {
   cout << "DELIMITADORES: ";
-  for(uint8_t i=0;; ++i)
+  for(size_t i=0; i < ISO_8859_SIZE; ++i)
   {
-    if(tk.delimiters.check(i))
+    if(tk.delimiters[i])
     {
       cout << (char)i;
       /*
@@ -299,9 +299,6 @@ ostream& operator<<(ostream& os, const Tokenizador& tk)
       }
       */
     }
-
-    if(i == ISO_8859_SIZE -1)
-      break;
   }
 
   cout << " TRATA DE CASOS ESPECIALES: " << tk.casosEspeciales 
@@ -313,78 +310,66 @@ ostream& operator<<(ostream& os, const Tokenizador& tk)
 
 
 Tokenizador::Tokenizador(const string& delimitadoresPalabra, const bool casosEspeciales, const bool minuscSinAcentos) :
-  casosEspeciales(casosEspeciales), pasarAminuscSinAcentos(minuscSinAcentos), loader()
+  casosEspeciales(casosEspeciales), pasarAminuscSinAcentos(minuscSinAcentos), delimiters()
 {
-  constructionLogic();
-  delimiters.copy_from(delimitadoresPalabra);
+  const unsigned char* p = reinterpret_cast<const unsigned char*>(delimitadoresPalabra.data());
+  size_t n = delimitadoresPalabra.size();
+
+  for(size_t i=0; i < n; ++i)
+    delimiters.set((size_t)p[i]);
+
+  delimiters.set((size_t)'\0');
+  delimiters.set((size_t)'\n');
+  if(casosEspeciales) delimiters.set((size_t)' ');
 }
 
 
-Tokenizador::Tokenizador(const Tokenizador& tk) : casosEspeciales(tk.casosEspeciales), pasarAminuscSinAcentos(tk.pasarAminuscSinAcentos), loader()
+Tokenizador::Tokenizador(const Tokenizador& tk) :
+  casosEspeciales(tk.casosEspeciales),
+  pasarAminuscSinAcentos(tk.pasarAminuscSinAcentos),
+  delimiters(tk.delimiters) {}
+
+
+Tokenizador::Tokenizador() : casosEspeciales(true), pasarAminuscSinAcentos(false), delimiters()
 {
-  constructionLogic();
-  delimiters.copy_from(tk.delimiters);
+  static const unsigned char[] delim_defaults = ",;:.-/+*\\ '\"{}[]()<>¡!¿?&#=\t@";
+  for(size_t i=0; i < sizeof(delim_defaults); ++i)
+    delimiters.set(delim_defaults[i]);
+
+  delimiters.set((size_t)'\0');
+  delimiters.set((size_t)'\n');
+  if(casosEspeciales) delimiters.set((size_t)' ');
 }
 
 
-Tokenizador::Tokenizador() : casosEspeciales(true), pasarAminuscSinAcentos(false), loader()
-{
-  static const char* delimDefaults = ",;:.-/+*\\ '\"{}[]()<>¡!¿?&#=\t@";
-  const char* i = delimDefaults;
-  constructionLogic();
-  while(*i != '\0')
-  {
-    delimiters.set(*i, true);
-    ++i;
-  }
-}
-
-
-Tokenizador::~Tokenizador()
-{
-  delimiters.reset();
-  loader.terminate();
-}
+Tokenizador::~Tokenizador() {}
 
 
 Tokenizador& Tokenizador::operator=(const Tokenizador& tk)
 {
   casosEspeciales = tk.casosEspeciales;
   pasarAminuscSinAcentos = tk.pasarAminuscSinAcentos;
-  delimiters.copy_from(tk.delimiters);
-  loader.terminate();
+  delimiters = tk.delimiters;
   return *this;
 }
 
 
+// Seguir aqui ===========================================================================================================
 void Tokenizador::Tokenizar(const string& str, list<string>& tokens)
 {
   tokens.clear();
-  string str_copy(str);
+  pair<const char*, const char*> tk;
   if(pasarAminuscSinAcentos)
   {
-    //TODO: make a fully constant-time lookup table
-    for(auto i = str_copy.begin(); i != str_copy.end(); i++)
-      *i = normalizeChar(*i);
+    tk = extractToken();
+    //TODO: bucle con cada string pasada a minus sin acentos (por cada emplace_back en la lista
+    //TODO: mirar normalizeChar por si hay algo salvable
   }
-  loader.mem_begin(str_copy.c_str(), str_copy.length());
-  pair<const char*, const char*> tk;
-
-  while(loader.frontpoint < loader.inbuf_end)
+  else
   {
-    tk = (this->*extractToken)();
-    if(tk.first != nullptr)
-    {
-      tokens.emplace_back(tk.first, tk.second);
-      if(
-          (*loader.readpoint == ',' || *loader.readpoint == '.')
-          && casosEspeciales && delimiters.check(',') && delimiters.check('.'))
-      {
-        tokens.back() = string(1, '0') + tokens.back();
-      }
-    }
+    tk = extractToken();
+    //TODO: bucle sin minuscSinAcentos
   }
-  loader.mem_terminate();
 }
 
 
@@ -856,33 +841,4 @@ const char* Tokenizador::decimalTill()
     ++reader;
   }
   return reader;
-}
-
-
-void Tokenizador::constructionLogic()
-{
-  defaultDelimiters();
-  
-  if(casosEspeciales)
-    extractToken = &Tokenizador::extractSpecialCaseToken;
-  else
-    extractToken = &Tokenizador::extractCommonCaseToken;
-}
-
-
-void Tokenizador::defaultDelimiters()
-{
-  delimiters.reset();
-  delimiters.set('\0', true);
-  delimiters.set('\n', true);
-  specialDelimiters();
-}
-
-
-void Tokenizador::specialDelimiters()
-{
-  if(casosEspeciales)
-    delimiters.set(0x20 /*empty space*/, true);
-  else
-    delimiters.set(0x20, false);
 }
