@@ -1,22 +1,16 @@
 .PHONY: clean
 
-#TODO: cambiar todo el makefile
+CC:=g++
+FLAGS:= -g -Wall -Werror
+DEBUG_LOG:= #-D DEBUG
+VPATH:=src test
+FILES:=$(shell ls src) main.cpp
+OUT:=practica1
 
-CC=g++
-OPTIONS= -g
-DEBUG= #-D DEBUG
-LIBDIR=lib
-INCLUDEDIR=include
-_OBJ= tokenizador.o
-OBJ= $(patsubst %,$(LIBDIR)/%,$(_OBJ))
 
-all: practica1
+$(OUT): $(FILES)
+	$(CC) $(FLAGS) $(DEBUG_LOG) $^ -o $(OUT)
 
-practica1: src/main.cpp $(OBJ)
-	$(CC) $(OPTIONS) $(DEBUG) -I$(INCLUDEDIR) src/main.cpp $(OBJ) -o practica1
 
-$(LIBDIR)/%.o : $(LIBDIR)/%.cpp $(INCLUDEDIR)/%.h 
-	$(CC) $(OPTIONS) $(DEBUG) -c -I$(INCLUDEDIR) -o $@ $<
-
-clean: 
-	rm -f $(OBJ)
+clean:
+	rm practica1
