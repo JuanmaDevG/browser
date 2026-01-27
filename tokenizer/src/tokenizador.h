@@ -14,12 +14,9 @@ using namespace std;
 #define DELIMITER_BIT_VEC_SIZE (ISO_8859_SIZE >> 3)
 
 
-class IndexadorHash; //TODO: solve interface bullshit
-
 class Tokenizador
 {
   friend ostream& operator<<(ostream&, const Tokenizador&);
-  friend class IndexadorHash;
 
 public:
   Tokenizador (const string& delimitadoresPalabra, const bool kcasosEspeciales, const bool minuscSinAcentos);
@@ -59,14 +56,13 @@ private:
   bool casosEspeciales;
   bool pasarAminuscSinAcentos;
 
+  extern inline void default_delimiters();
+  extern inline void add_delimiters(const unsigned char *restrict p, const size_t n);
+
   //TODO: look if functions may work
   bool isNumeric(const char) const;
   bool tkFile(const char* ifile, const char* ofile);
   bool tkDirectory(const char* name, const size_t len);
-
-  // Functions for the indexer TODO: remove interface bullshit
-  void tkAppend(const string& file, vector<string>& tokens);
-  bool tkDirAppend(const string& directory, vector<string>& tokens);
 
   //TODO: change everything with a state machine (and probably make an enum type)
   // Special case detection functions

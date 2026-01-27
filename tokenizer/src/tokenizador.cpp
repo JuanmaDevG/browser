@@ -312,15 +312,10 @@ ostream& operator<<(ostream& os, const Tokenizador& tk)
 Tokenizador::Tokenizador(const string& delimitadoresPalabra, const bool casosEspeciales, const bool minuscSinAcentos) :
   casosEspeciales(casosEspeciales), pasarAminuscSinAcentos(minuscSinAcentos), delimiters()
 {
-  const unsigned char* p = reinterpret_cast<const unsigned char*>(delimitadoresPalabra.data());
-  size_t n = delimitadoresPalabra.size();
-
-  for(size_t i=0; i < n; ++i)
-    delimiters.set((size_t)p[i]);
-
-  delimiters.set((size_t)'\0');
-  delimiters.set((size_t)'\n');
-  if(casosEspeciales) delimiters.set((size_t)' ');
+  default_delimiters();
+  add_delimiters(
+      reinterpret_cast<const unsigned char*>(delimitadoresPalabra.data()),
+      delimitadoresPalabra.size());
 }
 
 
@@ -332,13 +327,9 @@ Tokenizador::Tokenizador(const Tokenizador& tk) :
 
 Tokenizador::Tokenizador() : casosEspeciales(true), pasarAminuscSinAcentos(false), delimiters()
 {
-  static const unsigned char[] delim_defaults = ",;:.-/+*\\ '\"{}[]()<>¡!¿?&#=\t@";
-  for(size_t i=0; i < sizeof(delim_defaults); ++i)
-    delimiters.set(delim_defaults[i]);
-
-  delimiters.set((size_t)'\0');
-  delimiters.set((size_t)'\n');
-  if(casosEspeciales) delimiters.set((size_t)' ');
+  default_delimiters();
+  static const unsigned char[] auto_delimiters = ",;:.-/+*\\ '\"{}[]()<>¡!¿?&#=\t@";
+  add_delimiters(auto_delimiters, sizeof(auto_delimiters) -1);
 }
 
 
@@ -406,26 +397,30 @@ bool Tokenizador::TokenizarDirectorio(const string& dirAIndexar)
 
 void Tokenizador::DelimitadoresPalabra(const string& nuevoDelimiters)
 {
-  defaultDelimiters();
-  delimiters.copy_from(nuevoDelimiters);
-} 
+  delimiters.reset();
+  default_delimiters();
+  add_delimiters(
+      reinterpret_cast<const unsigned char*>(nuevoDelimiters.data()),
+      nuevoDelimiters.size());
+}
 
 
 void Tokenizador::AnyadirDelimitadoresPalabra(const string& nuevoDelimiters)
 {
-  delimiters.copy_from(nuevoDelimiters);
+  add_delimiters(
+      reinterpret_cast<const unsigned char*>(nuevoDelimiters.data()),
+      nuevoDelimiters.size());
 }
 
 
 string Tokenizador::DelimitadoresPalabra() const
 {
   string result;
-  result.reserve(ISO_8859_SIZE);
-  for(uint8_t i=0; i < ISO_8859_SIZE -1; ++i)
-  {
-    if(delimiters.check(static_cast<char>(i)))
-      result.push_back(static_cast<char>(i));
-  }
+  result.reserve(delimiters.count() +1);
+
+  for(size_t i=0; i < ISO_8859_SIZE -1; ++i)
+    if(delimiters[i])
+      result.push_back((char)i);
 
   return result;
 } 
@@ -434,8 +429,8 @@ string Tokenizador::DelimitadoresPalabra() const
 void Tokenizador::CasosEspeciales(const bool nuevoCasosEspeciales)
 {
   casosEspeciales = nuevoCasosEspeciales;
-  extractToken = (casosEspeciales ? &Tokenizador::extractSpecialCaseToken : &Tokenizador::extractCommonCaseToken);
-  specialDelimiters();
+  if(casosEspeciales) delimiters.set((size_t)' ');
+  else delimiters.reset((size_t)' ');
 }
 
 
@@ -454,6 +449,21 @@ void Tokenizador::PasarAminuscSinAcentos(const bool nuevoPasarAminuscSinAcentos)
 bool Tokenizador::PasarAminuscSinAcentos() const
 {
   return pasarAminuscSinAcentos;
+}
+
+
+void Tokenizador::default_delimiters()
+{
+  delimiters.set((size_t)'\0');
+  delimiters.set((size_t)'\n');
+  if(casosEspeciales) delimiters.set((size_t)' ');
+}
+
+
+void Tokenizador::add_delimiters(const char *restrict delim, const size_t n)
+{
+  for(size_t i=0; i < n; ++i)
+    delimiters.set((size_t)delim[i]);
 }
 
 
