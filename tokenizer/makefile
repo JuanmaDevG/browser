@@ -1,7 +1,7 @@
 .PHONY: clean
 
 CC:=g++
-FLAGS:= -g -Wall -Werror
+FLAGS:= -g -Wall -Werror -std=c++11
 DEBUG_LOG:= #-D DEBUG
 VPATH:=src test
 FILES:=$(shell ls src) main.cpp

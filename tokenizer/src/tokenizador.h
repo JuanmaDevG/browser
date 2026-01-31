@@ -58,6 +58,8 @@ private:
 
   extern inline void default_delimiters();
   extern inline void add_delimiters(const unsigned char *restrict p, const size_t n);
+  extern inline void normalize(unsigned char *restrict buf, const unsigned char *const restrict buf_end) const;
+  size_t tokenize_buffer(const unsigned char *restrict inbuf, unsigned char *restrict outbuf, const size_t min_bufsize) const;
 
   //TODO: look if functions may work
   bool isNumeric(const char) const;

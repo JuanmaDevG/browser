@@ -345,33 +345,87 @@ Tokenizador& Tokenizador::operator=(const Tokenizador& tk)
 }
 
 
-// Seguir aqui ===========================================================================================================
 void Tokenizador::Tokenizar(const string& str, list<string>& tokens)
 {
   tokens.clear();
-  pair<const char*, const char*> tk;
+  const size_t inbuf_size = str.size();
+  const unsigned char *const inbuf = (const unsigned char*)str.data();
+  unsigned char *const outbuf = new unsigned char[inbuf_size];
+
+  const size_t written_bytes = tokenize_buffer(inbuf, outbuf, inbuf_size);
+
+  const unsigned char *const outbuf_end = outbuf + written_bytes;
+  const unsigned char *tbegin = outbuf, *tend = outbuf;
+  while(tbegin < outbuf_end)
+  { //TODO
+
   if(pasarAminuscSinAcentos)
   {
-    tk = extractToken();
-    //TODO: bucle con cada string pasada a minus sin acentos (por cada emplace_back en la lista
-    //TODO: mirar normalizeChar por si hay algo salvable
+    //TODO: replace get_toke with tokenize_buffer(inbuf, outbuf)
+    // And then emplace_back the strings inside the fucking list
+    unsigned char *tbegin, *const tend;
+    tk = get_token(readpoint, end);
+    readpoint = tk.second;
+    while(readpoint < end)
+    {
+      tokens.emplace_back(tk.first, tk.second);
+      tbegin = (unsigned char*)tokens.back().data();
+      tend = (unsigned char *const)tbegin + tokens.back().size();
+      normalize(tbegin, tend);
+      tk = get_token(readpoint, end);
+      readpoint = tk.second;
+    }
   }
   else
   {
-    tk = extractToken();
-    //TODO: bucle sin minuscSinAcentos
+    while(begin < end)
+    {
+      tk = get_token(begin, end);
+      tokens.emplace_back(tk.first, tk.second);
+      begin = tk.second;
+    }
   }
 }
 
 
 bool Tokenizador::Tokenizar(const string& i, const string& f)
 {
-  return tkFile(i.c_str(), f.c_str());
+  int i_fd = open(i.c_str(), O_RDONLY);
+  if(i_fd < 0)
+    return false;
+  int o_fd = open(o.c_str(), O_RDWR | O_CREAT, S_IRUSR | S_IWUSR);
+  if(o_fd < 0)
+    return false;
+
+  struct stat fileinfo;
+  fstat(i_fd, &fileinfo);
+  close(i_fd);
+  const size_t i_fsize = fileinfo.st_size;
+  const unsigned char *const inbuf = (const unsigned char*)mmap(nullptr, i_fsize, PROT_READ, MAP_SHARED, inbuf_fd, 0);
+  if(inbuf == MAP_FAILED)
+    return false;
+  madvise(inbuf, i_fsize, MADV_SEQUENTIAL | MADV_WILLNEED);
+
+  ftruncate(o_fd, (off_t)i_fsize);
+  unsigned char *const outbuf = (const unsigned char*)mmap(nullptr, i_fsize, PROT_WRITE, MAP_SHARED, o_fd, 0);
+  if(outbuf == MAP_FAILED)
+    return false;
+  madvise(outbuf, i_fsize, MADV_SEQUENTIAL);
+
+  const size_t written_bytes = tokenize_buffer(inbuf, outbuf, i_fsize);
+
+  munmap(inbuf, i_fsize);
+  msync(outbuf, i_fsize, MS_ASYNC);
+  munmap(outbuf, i_fsize);
+  ftruncate(o_fd, written_bytes)
+  close(o_fd);
+  return true;
 }
 
 
 bool Tokenizador::TokenizarListaFicheros(const string& i)
 {
+  //TODO: consiste en un fichero que es una lista de ficheros
   file_loader fl;
 
   if(!fl.begin(i.c_str())) return false;
@@ -467,28 +521,50 @@ void Tokenizador::add_delimiters(const char *restrict delim, const size_t n)
 }
 
 
-//TODO: remove this and just place a loop
-char Tokenizador::normalizeChar(const char c)
+void Tokenizador::normalize(unsigned char *restrict buf, const unsigned char *const restrict buf_end) const
 {
-  int16_t curChar = (int16_t)(uint8_t)c;
-  if(curChar >= CAPITAL_START_POINT && curChar <= CAPITAL_END_POINT)
-    curChar += Tokenizador::TOLOWER_OFFSET;
-  else if(curChar - ACCENT_START_POINT >= 0)
-    curChar += Tokenizador::accentRemovalOffsetVec[curChar - ACCENT_START_POINT];
-
-  return (char)curChar;
+  while(begin < end)
+  {
+    *begin = iso8859_norm_table[*begin];
+    ++begin;
+  }
 }
 
 
-void Tokenizador::skipDelimiters(const bool leaveLastOne)
+size_t Tokenizador::tokenize_buffer(const unsigned char *readpoint, unsigned char *writepoint, const size_t min_bufsize) const
 {
-  if(!delimiters.check(*loader.frontpoint)) return;
-  while(loader.frontpoint < loader.inbuf_end && delimiters.check(*loader.frontpoint))
-    ++loader.frontpoint;
+  const unsigned char *const inbuf_end = readpoint + min_bufsize;
+  const unsigned char *const outbuf_begin = writepoint;
 
-  if(leaveLastOne)
-    --loader.frontpoint;
-  loader.readpoint = loader.frontpoint;
+  if(casosEspeciales)
+  {
+    //TODO: loop special case state machine
+  }
+  else
+  {
+    bool got_char = false;
+    while(readpoint < inbuf_end)
+    {
+      if(delimiters[*readpoint]) {
+        ++readpoint;
+        if(got_char) {
+          got_char = false;
+          *writepoint = '\n';
+          ++writepoint;
+        }
+        continue;
+      }
+      got_char = true;
+      *writepoint = *readpoint;
+      ++readpoint;
+      ++writepoint;
+    }
+
+    if(pasarAminuscSinAcentos)
+      normalize(outbuf, outbuf_end);
+  }
+
+  return writepoint - outbuf_begin; // written bytes
 }
 
 
@@ -500,6 +576,7 @@ bool Tokenizador::isNumeric(const char c) const
 
 bool Tokenizador::tkFile(const char* ifile, const char* ofile)
 {
+  //TODO: cambiar absolutamente todo
   if(!loader.begin(ifile, ofile))
   {
     cerr << "ERROR: No existe el archivo: " << ifile << endl;
@@ -573,60 +650,6 @@ bool Tokenizador::tkDirectory(const char* dir_name, const size_t dir_len)
   }
   delete[] entry_name;
   closedir(dir);
-  return true;
-}
-
-
-void Tokenizador::tkAppend(const string& filename, vector<string>& tokens)
-{
-  loader.begin(filename.c_str());
-  tokens.reserve(tokens.size() + (loader.inbuf_size >> 3));
-  if(pasarAminuscSinAcentos)
-  {
-    for(char* i = const_cast<char*>(loader.inbuf); i < loader.inbuf_end; ++i)
-      *i = normalizeChar(*i);
-  }
-
-  pair<const char*, const char*> tk;
-  while(loader.frontpoint < loader.inbuf_end)
-  {
-    tk = (this->*extractToken)();
-    if(tk.first)
-    {
-      tokens.emplace_back(tk.first, tk.second);
-      if(*loader.readpoint == ',' || *loader.readpoint == '.')
-        tokens.back() = string(1, '0') + tokens.back();
-    }
-  }
-  loader.terminate();
-}
-
-
-bool Tokenizador::tkDirAppend(const string& dir_name, vector<string>& tokens)
-{
-  DIR* dir;
-  struct dirent* entry;
-
-  if((dir = opendir(dir_name.c_str())) == nullptr)
-  {
-    cerr << "ERROR: no se ha podido abrir el directorio " << dir_name << " porque no existe." << endl;
-    return false;
-  }
-
-  while((entry = readdir(dir)) != nullptr)
-  {
-    if(entry->d_name[0] == '.' && (entry->d_name[1] == '\0' || (entry->d_name[1] == '.')))
-      continue;
-
-    if(entry->d_type == DT_DIR)
-    {
-      tkDirAppend(entry->d_name, tokens);
-    }
-    else
-    {
-      tkAppend(entry->d_name, tokens);
-    }
-  }
   return true;
 }
 
