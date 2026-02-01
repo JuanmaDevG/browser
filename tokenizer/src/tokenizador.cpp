@@ -9,107 +9,7 @@
 #include <cstring>
 
 
-constexpr bitset<ISO_8859_SIZE> get_url_delimiters() {
-  bitset<ISO_8859_SIZE> result;
-  const unsigned char delim[] = "_:/.?&-=#@";
-  const size_t N = sizeof(delim) -1;
-
-  for(size_t i = 0; i < N; i++) {
-    result.set(delim[i]);
-  }
-  return result;
-}
-
-
-file_loader::file_loader()
-{
-  null_readpoints();
-  null_writepoints();
-}
-
-
-bool file_loader::begin(const char* filename, const char* output_filename = nullptr)
-{
-  inbuf_fd = open(filename, O_RDONLY);
-  struct stat in_fileinfo;
-  if(inbuf_fd < 0)
-    return false;
-
-  fstat(inbuf_fd, &in_fileinfo);
-  inbuf = (char*)mmap(nullptr, in_fileinfo.st_size, PROT_READ | PROT_WRITE, MAP_PRIVATE, inbuf_fd, 0);
-  inbuf_size = in_fileinfo.st_size;
-  readpoint = inbuf;
-  frontpoint = inbuf;
-  inbuf_end = inbuf + inbuf_size;
-
-  if(!output_filename) return true;
-  outbuf_fd = open(output_filename, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR);
-  if(outbuf_fd < 0)
-  {
-    munmap(const_cast<char*>(inbuf), in_fileinfo.st_size);
-    null_readpoints();
-    return false;
-  }
-  ftruncate(outbuf_fd, in_fileinfo.st_size);
-  outbuf = (char*)mmap(nullptr, in_fileinfo.st_size, PROT_WRITE, MAP_SHARED, outbuf_fd, 0);
-  if(outbuf == MAP_FAILED)
-  {
-    close(inbuf_fd);
-    close(outbuf_fd);
-    munmap(const_cast<char*>(inbuf), inbuf_size);
-    null_readpoints();
-    null_writepoints();
-    return false;
-  }
-  outbuf_size = in_fileinfo.st_size;
-  outbuf_end = outbuf + outbuf_size;
-  writepoint = outbuf;
-
-  return true;
-}
-
-
-void file_loader::terminate()
-{
-  if(!inbuf) return;
-  munmap(const_cast<char*>(inbuf), inbuf_size);
-  close(inbuf_fd);
-
-  if(outbuf) {
-    munmap(outbuf, outbuf_size);
-    if(writepoint < outbuf_end)  // Adjust filesize
-    {
-      ftruncate(outbuf_fd, outbuf_size - (outbuf_end - writepoint));
-    }
-    close(outbuf_fd);
-  }
-
-  null_readpoints();
-  null_writepoints();
-}
-
-
-extern inline void file_loader::null_readpoints()
-{
-  inbuf = nullptr;
-  inbuf_end = nullptr;
-  inbuf_size = 0;
-  readpoint = nullptr;
-  frontpoint = nullptr;
-  inbuf_fd = 0;
-}
-
-
-extern inline void file_loader::null_writepoints()
-{
-  outbuf = nullptr;
-  outbuf_end = nullptr;
-  outbuf_size = 0;
-  writepoint = nullptr;
-  outbuf_fd = 0;
-}
-
-
+//TODO: look if something useful for resize_purposes
 bool file_loader::resize_outfile(const size_t sz)
 {
   off_t checkpoint = writepoint - outbuf;
@@ -125,122 +25,6 @@ bool file_loader::resize_outfile(const size_t sz)
   writepoint = outbuf + checkpoint;
   outbuf_end = outbuf + sz;
 
-  return true;
-}
-
-
-pair<const char*, const char*> file_loader::getline()
-{
-  if(frontpoint >= inbuf_end) return {nullptr, nullptr};
-  if(*frontpoint == '\n') ++frontpoint;
-  readpoint = frontpoint;
-
-  frontpoint = (const char*)memchr(readpoint, '\n', inbuf_size - (readpoint - inbuf));
-  if(!frontpoint)
-    frontpoint = inbuf + inbuf_size;
-
-  return {readpoint, frontpoint};
-}
-
-
-bool file_loader::write(const void* buf, const size_t sz)
-{
-  if(outbuf_end - writepoint < sz)
-  {
-    if(!resize_outfile(writepoint - outbuf + sz))
-      return false;
-  }
-  memcpy(writepoint, buf, sz);
-  writepoint += sz;
-  return true;
-}
-
-
-bool file_loader::put(const char c)
-{
-  if(writepoint >= outbuf_end)
-    if(!resize_outfile(outbuf_size + 256))
-      return false;
-  *writepoint = c;
-  ++writepoint;
-  return true;
-}
-
-
-void file_loader::mem_begin(const char* rdbuf, const size_t rdbuf_sz)
-{
-  inbuf = rdbuf;
-  inbuf_end = inbuf + rdbuf_sz;
-  inbuf_size = rdbuf_sz;
-  readpoint = inbuf;
-  frontpoint = inbuf;
-  inbuf_fd = 0;
-}
-
-
-void file_loader::mem_terminate()
-{
-  null_readpoints();
-}
-
-
-void memory_pool::reset()
-{
-  if(buf != data)
-  {
-    delete[] buf;
-    buf = data;
-    bufsize = MEM_POOL_SIZE;
-    buf_end = buf + MEM_POOL_SIZE;
-  }
-  writepoint = buf;
-}
-
-
-bool memory_pool::resize(const size_t sz)
-{
-  if(sz <= bufsize)
-  {
-    buf_end -= bufsize - sz;
-    bufsize = sz;
-    if(writepoint > buf_end)
-      writepoint = buf_end;
-    return true;
-  }
-
-  off_t written_bytes = writepoint - buf;
-  char* newbuf = new char[sz];
-  if(!newbuf) return false;
-  memcpy(newbuf, buf, written_bytes);
-  if(buf != data)
-    delete[] buf;
-  buf = newbuf;
-  buf_end = buf + sz;
-  bufsize = sz;
-  writepoint = buf + written_bytes;
-  return true;
-}
-
-
-bool memory_pool::write(const void* rdbuf, const size_t sz)
-{
-  if(buf_end - writepoint < sz)
-    if(!this->resize(writepoint - buf + sz))
-      return false;
-
-  memcpy(writepoint, rdbuf, sz);
-  writepoint += sz;
-  return true;
-}
-
-
-bool memory_pool::put(const char c)
-{
-  if(writepoint >= buf_end)
-    if(!this->resize(bufsize + 256))
-      return false;
-  *writepoint = c;
-  ++writepoint;
   return true;
 }
 
@@ -316,6 +100,7 @@ Tokenizador& Tokenizador::operator=(const Tokenizador& tk)
 }
 
 
+//TODO: update to tokenize_buffer
 void Tokenizador::Tokenizar(const string& str, list<string>& tokens)
 {
   tokens.clear();
@@ -329,8 +114,8 @@ void Tokenizador::Tokenizar(const string& str, list<string>& tokens)
   const unsigned char *tbegin = outbuf, *tend = outbuf;
   while(tbegin < outbuf_end)
   {
-    while(*tend != '\n')
-      tend++;
+    while(*tend != '\n' && tend < outbuf_end)
+      ++tend;
     tokens.emplace_back(tbegin, tend);
     ++tend;
     tbegin = tend;
@@ -514,6 +299,10 @@ void Tokenizador::default_delimiters()
   delimiters.set((size_t)'\0');
   delimiters.set((size_t)'\n');
   if(casosEspeciales) delimiters.set((size_t)' ');
+  
+  // Static delimiters for special cases
+  if(!Tokenizador::special_delimiters_done)
+    Tokenizador::initialize_special_delimiters();
 }
 
 
@@ -546,9 +335,35 @@ size_t Tokenizador::tokenize_buffer(const unsigned char *readpoint, unsigned cha
     unsigned char c1, c2;
     while(readpoint < inbuf_end)
     {
+      skip_delimiters:
       c1 = *readpoint++;
       if(delimiters[c1])
         continue;
+
+      url_preconditions:
+      unsigned char cmpbuf[6];
+      off_t r_offset = 0, buf_delta = outbuf + min_fsize - writepoint;
+      memcpy(cmpbuf, readpoint, (buf_delta < 6 ? buf_delta : 6));
+      normalize(cmpbuf, cmpbuf + 6);
+      if(buf_delta >= 5 && strncmp(cmpbuf, "http:", 5) == 0)
+        r_offset = 5;
+      else if(buf_delta >= 6 && strncmp(cmpbuf, "https:", 6) == 0)
+        r_offset = 6;
+      else if(buf_delta >= 4 && strncmp(cmpbuf, "ftp:", 4) == 0)
+        r_offset = 4;
+      url:
+      if(r_offset > 0) {
+        memcpy(writepoint, readpoint, (size_t)r_offset);
+        readpoint += r_offset;
+        writepoint += r_offset;
+        while(readpoint < inbuf_end) {
+          c1 = *readpoint++;
+          if(delimiters[c1] && !url_delimiters[c1])
+            break;
+          *writepoint++ = c1;
+        }
+        continue;
+      }
 
       normal_word:
       *writepoint++ = c1;
@@ -572,30 +387,36 @@ size_t Tokenizador::tokenize_buffer(const unsigned char *readpoint, unsigned cha
           else break; 
         }
       }
-      else 
+      email:
+      else if(!delimiters[(c1 = *readpoint++)] && delimiters['@'])
       {
-        //TODO: dice el enunciado que las url's son el primer caso que se comprueba, mirar bien
-        url:
-        constexpr bitset<ISO_8859_SIZE> url_delim = get_url_delimiters();
-        off_t r_offset = 0, buf_delta = outbuf + min_fsize - writepoint;
-        if(buf_delta >= 5 && strncmp(readpoint, "http:", 5) == 0)
-          r_offset = 5;
-        else if(buf_delta >= 6 && strncmp(readpoint, "https:", 6) == 0)
-          r_offset = 6;
-        else if(buf_delta >= 4 && strncmp(readpoint, "ftp:", 4) == 0)
-          r_offset = 4;
-
-        if(r_offset > 0) {
-          memcpy(writepoint, readpoint, (size_t)r_offset);
-          readpoint += r_offset;
-          writepoint += r_offset;
-          while(readpoint < inbuf_end) {
-            c1 = *readpoint++;
-            if(delimiters[c1] && !url_delim[c1])
-              break;
+        bool valid_email = true;
+        *writepoint++ = c1;
+        while(readpoint < inbuf_end) {
+          if((c1 = *readpoint++) == '@') {
             *writepoint++ = c1;
+            break;
           }
+          if(delimiters[c1]) {
+            valid_email = false;
+            break;
+          }
+          *writepoint++ = c1;
         }
+        if(!valid_email) continue;
+        while(readpoint < inbuf_end) {
+          c1 = *readpoint++;
+          if(delimiters[c1] && !email_delimiters[c1])
+            break;
+          *writepoint++ = c1;
+        }
+      }
+      acronym:
+      else if(/**/)
+      {
+      }
+      number:
+      else {
       }
     }
   }
@@ -626,6 +447,24 @@ size_t Tokenizador::tokenize_buffer(const unsigned char *readpoint, unsigned cha
 }
 
 
+static void Tokenizador::initialize_special_delimiters()
+{
+  static const unsigned char raw_url_delim[] = "_:/.?&-=#@";
+  static const unsigned char raw_email_delim[] = ".-_";
+  size_t N = sizeof(raw_url_delim) -1;
+
+  for(int i = 0; i < N; ++i)
+    Tokenizador::url_delimiters.set(raw_url_delim[i]);
+
+  N = sizeof(raw_email_delim) -1;
+  for(int i=0; i < N; ++i)
+    Tokenizador::email_delimiters.set(raw_email_delim[i]);
+
+  special_delimiters_done = true;
+}
+
+
+//TODO: pass it (and more conditions) to a macro
 bool Tokenizador::isNumeric(const char c) const
 {
   return static_cast<uint8_t>(c) >= Tokenizador::NUMERIC_START_POINT && static_cast<uint8_t>(c) <= Tokenizador::NUMERIC_END_POINT;

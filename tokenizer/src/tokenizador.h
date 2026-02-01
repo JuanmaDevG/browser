@@ -11,7 +11,6 @@
 using namespace std;
 
 #define ISO_8859_SIZE 256
-#define DELIMITER_BIT_VEC_SIZE (ISO_8859_SIZE >> 3)
 
 #define NUMERIC_START_POINT 0x30
 #define NUMERIC_END_POINT 0x39
@@ -55,7 +54,7 @@ public:
   bool PasarAminuscSinAcentos() const;
 
 private:
-  bitset<256> delimiters;
+  bitset<ISO_8850_SIZE> delimiters;
   bool casosEspeciales;
   bool pasarAminuscSinAcentos;
 
@@ -64,22 +63,8 @@ private:
   extern inline void normalize(unsigned char *restrict buf, const unsigned char *const restrict buf_end) const;
   size_t tokenize_buffer(const unsigned char *restrict inbuf, unsigned char *restrict outbuf, const size_t min_bufsize) const;
 
-  //TODO: look if functions may work
-  bool isNumeric(const char) const;
-  bool tkFile(const char* ifile, const char* ofile);
-  bool tkDirectory(const char* name, const size_t len);
-
-  //TODO: change everything with a state machine (and probably make an enum type)
-  // Special case detection functions
-  const char* multiwordTill();
-  const char* urlTill();
-  const char* emailTill();
-  const char* acronymTill();
-  const char* decimalTill();
-
-  void constructionLogic();
-  void defaultDelimiters();
-  void specialDelimiters();
+  static bitset<ISO_8859_SIZE> url_delimiters;
+  static bitset<ISO_8859_SIZE> email_delimiters;
 
   static const unsigned char iso8859_norm_table[256] = {
     0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
@@ -99,4 +84,7 @@ private:
     'a', 'a', 'a', 'a', 'a', 'a', 'a', 'c', 'e', 'e', 'e', 'e', 'i', 'i', 'i', 'i',
     'o', 'n', 'o', 'o', 'o', 'o', 'o', 0xf7, 'o', 'u', 'u', 'u', 'u', 'y', 0xfe, 'y'
   };
+
+  static bool special_delimiters_done = false;
+  static void initialize_sepcial_delimiters();
 };
