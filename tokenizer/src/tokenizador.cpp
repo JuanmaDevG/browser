@@ -9,6 +9,9 @@
 #include <cstring>
 
 
+#define is_numeric(n) (n >= NUMERIC_START_POINT && n <= NUMERIC_END_POINT)
+
+
 //TODO: look if something useful for resize_purposes
 bool file_loader::resize_outfile(const size_t sz)
 {
@@ -328,68 +331,63 @@ size_t Tokenizador::tokenize_buffer(const unsigned char *readpoint, unsigned cha
   const unsigned char *const inbuf_end = readpoint + min_bufsize;
   const unsigned char *const outbuf_begin = writepoint;
 
-  //TODO: probably check for buffer resize
+  //TODO: ensure the out buffer is enough even in the worst of the cases: ".0 .0 .0" -> "0.0 0.0 0.0" (8 bytes -> 11 bytes)
+  //TODO: look at sign of special delimiters and ensure unsigned char compatibility
+  //TODO: adjust the directory structure to the spec makefile
 
   if(casosEspeciales)
   {
     unsigned char c1, c2;
+    unsigned char cmpbuf;
+    off_t rd_offset, buf_delta;
     while(readpoint < inbuf_end)
     {
-      skip_delimiters:
-      c1 = *readpoint++;
-      if(delimiters[c1])
-        continue;
-
-      url_preconditions:
-      unsigned char cmpbuf[6];
-      off_t r_offset = 0, buf_delta = outbuf + min_fsize - writepoint;
+      url_precondition:
+      rd_offset = 0; buf_delta = outbuf + min_bufsize - writepoint;
       memcpy(cmpbuf, readpoint, (buf_delta < 6 ? buf_delta : 6));
       normalize(cmpbuf, cmpbuf + 6);
       if(buf_delta >= 5 && strncmp(cmpbuf, "http:", 5) == 0)
-        r_offset = 5;
+        rd_offset = 5;
       else if(buf_delta >= 6 && strncmp(cmpbuf, "https:", 6) == 0)
-        r_offset = 6;
+        rd_offset = 6;
       else if(buf_delta >= 4 && strncmp(cmpbuf, "ftp:", 4) == 0)
-        r_offset = 4;
+        rd_offset = 4;
+
       url:
-      if(r_offset > 0) {
-        memcpy(writepoint, readpoint, (size_t)r_offset);
-        readpoint += r_offset;
-        writepoint += r_offset;
+      if(rd_offset > 0) {
+        memcpy(writepoint, readpoint, (size_t)rd_offset);
+        readpoint += rd_offset;
+        writepoint += rd_offset;
         while(readpoint < inbuf_end) {
           c1 = *readpoint++;
           if(delimiters[c1] && !url_delimiters[c1])
             break;
           *writepoint++ = c1;
         }
-        continue;
+        *writepoint++ = '\n';
       }
 
-      normal_word:
-      *writepoint++ = c1;
-      while(readpoint < writepoint && !delimiters[(c1 = *readpoint++)])
-        *writepoint++ = c1;
-      if(readpoint == inbuf_end) break;
-
+      c1 = *readpoint++;
       multiword:
-      if(c1 == '-' && !delimiters[(c2 = *readpoint++)]) {
-        *writepoint++ = c1;
-        *writepoint++ = c2;
-        while(readpoint < inbuf_end)
-        {
+      if(delimiters['-'] && !delimiters[c1]) {
+        do {
+          *writepoint++ = c1;
           c1 = *readpoint++;
-          if(!delimiters[c1])
+          if(c1 == '-') {
+            if(readpoint == inbuf_end || delimiters[(c2 = *readpoint++)])
+              break;
             *writepoint++ = c1;
-          else if(c1 == '-' && readpoint < inbuf_end && !delimiters[(c2 = *readpoint++)]) {
-            *writeponit++ = c1;
-            *writepoint++ = c2;
+            c1 = c2;
           }
-          else break; 
-        }
+        } while(readpoint < inbuf_end);
+        *writepoint++ = '\n';
       }
+
       email:
-      else if(!delimiters[(c1 = *readpoint++)] && delimiters['@'])
+      else if(!delimiters[c1] && delimiters['@'])
       {
+        //TODO: watch the specific case specification
+        //TODO: second @ not allowed, store @pos and do \n and return to @pos+1
         bool valid_email = true;
         *writepoint++ = c1;
         while(readpoint < inbuf_end) {
@@ -410,13 +408,41 @@ size_t Tokenizador::tokenize_buffer(const unsigned char *readpoint, unsigned cha
             break;
           *writepoint++ = c1;
         }
+        *writepoint++ = '\n';
       }
+
       acronym:
-      else if(/**/)
+      else if(delimiters['.'] && !delimiters[c1])
       {
+        *writepoint++ = c1;
+        while(readpoint < inbuf_end) {
+          c1 = *readpoint++;
+          if(c1 == '.') {
+            if(readpoint == inbuf_end) break;
+            c2 = *readpoint++;
+            if(delimiters[c2]) break;
+            *writepoint++ = c1;
+            *writepoint++ = c2;
+            continue;
+          }
+          *writepoint++ = c1;
+        }
+        *writepoint++ = '\n';
       }
+
       number:
+      else if(/*number condition*/) {
+        *writepoint++ = '\n';
+      }
+
+      normal_word:
       else {
+        while(delimiters[c1] && readpoint < inbuf_end);
+        while(!delimiters[c1] && readpoint < inbuf_end) {
+          *writepoint++ = c1;
+          c1 = *readpoint++;
+        }
+        *writepont++ = '\n';
       }
     }
   }
@@ -461,13 +487,6 @@ static void Tokenizador::initialize_special_delimiters()
     Tokenizador::email_delimiters.set(raw_email_delim[i]);
 
   special_delimiters_done = true;
-}
-
-
-//TODO: pass it (and more conditions) to a macro
-bool Tokenizador::isNumeric(const char c) const
-{
-  return static_cast<uint8_t>(c) >= Tokenizador::NUMERIC_START_POINT && static_cast<uint8_t>(c) <= Tokenizador::NUMERIC_END_POINT;
 }
 
 
