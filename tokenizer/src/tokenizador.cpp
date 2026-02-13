@@ -47,7 +47,7 @@ Tokenizador::Tokenizador(const Tokenizador& tk) :
 Tokenizador::Tokenizador() : casosEspeciales(true), pasarAminuscSinAcentos(false), delimiters()
 {
   default_delimiters();
-  static const unsigned char[] auto_delimiters = ",;:.-/+*\\ '\"{}[]()<>¡!¿?&#=\t@";
+  static const unsigned char auto_delimiters[] = ",;:.-/+*\\ '\"{}[]()<>¡!¿?&#=\t@";
   add_delimiters(auto_delimiters, sizeof(auto_delimiters) -1);
 }
 
@@ -109,7 +109,7 @@ bool Tokenizador::Tokenizar(const string& i, const string& f)
     cerr << "No se ha podido mapear el fichero de entrada: " << i << endl;
     return false;
   }
-  madvise(inbuf, fileinfo.st_size, MADV_SEQUENTIAL | MADV_WILLNEED);
+  madvise(const_cast<void*>(inbuf), fileinfo.st_size, MADV_SEQUENTIAL | MADV_WILLNEED);
 
   ftruncate(o_fd, (off_t)fileinfo.st_size);
   unsigned char *const outbuf = (const unsigned char*)mmap(nullptr, fileinfo.st_size, PROT_WRITE, MAP_SHARED, o_fd, 0);
@@ -279,10 +279,10 @@ extern inline void Tokenizador::add_delimiters(const unsigned char *delim, const
 
 extern inline void Tokenizador::normalize(unsigned char *buf, const unsigned char *const buf_end) const
 {
-  while(begin < end)
+  while(buf < buf_end)
   {
-    *begin = iso8859_norm_table[*begin];
-    ++begin;
+    *buf = iso8859_norm_table[*buf];
+    ++buf;
   }
 }
 
@@ -299,7 +299,7 @@ size_t Tokenizador::tokenize_buffer(const unsigned char *readpoint, unsigned cha
   if(casosEspeciales)
   {
     unsigned char c1, c2;
-    unsigned char cmpbuf;
+    unsigned char cmpbuf[6];
     off_t rd_offset, buf_delta;
     while(readpoint < inbuf_end)
     {
@@ -403,7 +403,7 @@ size_t Tokenizador::tokenize_buffer(const unsigned char *readpoint, unsigned cha
           *writepoint++ = c1;
           c1 = *readpoint++;
         }
-        *writepont++ = '\n';
+        *writepoint++ = '\n';
       }
     }
   }
@@ -428,7 +428,7 @@ size_t Tokenizador::tokenize_buffer(const unsigned char *readpoint, unsigned cha
     }
   }
   if(pasarAminuscSinAcentos)
-    normalize(outbuf_begin, outbuf_begin + min_bufsize);
+    normalize(const_cast<unsigned char*>(outbuf_begin), outbuf_begin + min_bufsize);
 
   return writepoint - outbuf_begin; // written bytes
 }

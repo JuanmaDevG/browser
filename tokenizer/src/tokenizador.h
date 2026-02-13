@@ -55,9 +55,9 @@ public:
   bool PasarAminuscSinAcentos() const;
 
 private:
-  bitset<ISO_8859_SIZE> delimiters;
   bool casosEspeciales;
   bool pasarAminuscSinAcentos;
+  bitset<ISO_8859_SIZE> delimiters;
 
   void default_delimiters();
   void add_delimiters(const unsigned char *p, const size_t n);
