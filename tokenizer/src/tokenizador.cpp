@@ -17,26 +17,7 @@ ostream& operator<<(ostream& os, const Tokenizador& tk)
   cout << "DELIMITADORES: ";
   for(size_t i=0; i < ISO_8859_SIZE; ++i)
   {
-    if(tk.delimiters[i])
-    {
-      cout << (char)i;
-      /*
-      switch((char)i)
-      {
-        case '\n':
-          cout << "\\n";
-          break;
-        case '\t':
-          cout << "\\t";
-          break;
-        case '\\':
-          cout << "\\";
-          break;
-        default:
-          cout << (char)i;
-      }
-      */
-    }
+    if(tk.delimiters[i]) cout << (char)i;
   }
 
   cout << " TRATA DE CASOS ESPECIALES: " << tk.casosEspeciales 
@@ -145,7 +126,7 @@ bool Tokenizador::Tokenizar(const string& i, const string& f)
   munmap(inbuf, fileinfo.st_size);
   msync(outbuf, fileinfo.st_size, MS_ASYNC);
   munmap(outbuf, fileinfo.st_size);
-  ftruncate(o_fd, written_bytes)
+  ftruncate(o_fd, written_bytes);
   close(o_fd);
   return true;
 }
@@ -157,15 +138,15 @@ bool Tokenizador::TokenizarListaFicheros(const string& i)
   if(r_fd < 0) return false;
   struct stat r_info;
   fstat(r_fd, &r_info);
-  const unsigned char *const rbuf = mmap(nullptr, r_info.st_size, PROT_READ, MAP_SHARED, r_fd, 0);
+  const unsigned char *const rbuf = (const unsigned char*)mmap(nullptr, r_info.st_size, PROT_READ, MAP_SHARED, r_fd, 0);
   close(r_fd);
   if(rbuf == MAP_FAILED)
     return false;
-  madvise(rbuf, r_info.st_size, MADV_SEQUENTIAL);
+  madvise(const_cast<void*>(rbuf), r_info.st_size, MADV_SEQUENTIAL);
   const unsigned char *const rbuf_end = rbuf + r_info.st_size;
   string inpath, outpath;
 
-  const unsigned char* backpoint = rbuf, frontpoint = rbuf;
+  const unsigned char *backpoint = rbuf, *frontpoint = rbuf;
   while(backpoint < rbuf_end)
   {
     while(*frontpoint != '\n') ++frontpoint;
@@ -173,10 +154,10 @@ bool Tokenizador::TokenizarListaFicheros(const string& i)
     outpath.assign(backpoint, frontpoint).append(".tk");
     ++frontpoint;
     backpoint = frontpoint;
-    tokenizar(inpath, outpath);
+    Tokenizar(inpath, outpath);
   }
 
-  munmap(rbuf, r_info.st_size);
+  munmap(const_cast<void*>(rbuf), r_info.st_size);
   return true;
 }
 
@@ -277,7 +258,7 @@ bool Tokenizador::PasarAminuscSinAcentos() const
 }
 
 
-void Tokenizador::default_delimiters()
+extern inline void Tokenizador::default_delimiters()
 {
   delimiters.set((size_t)'\0');
   delimiters.set((size_t)'\n');
@@ -289,14 +270,14 @@ void Tokenizador::default_delimiters()
 }
 
 
-void Tokenizador::add_delimiters(const char *restrict delim, const size_t n)
+extern inline void Tokenizador::add_delimiters(const unsigned char *delim, const size_t n)
 {
   for(size_t i=0; i < n; ++i)
     delimiters.set((size_t)delim[i]);
 }
 
 
-void Tokenizador::normalize(unsigned char *restrict buf, const unsigned char *const restrict buf_end) const
+extern inline void Tokenizador::normalize(unsigned char *buf, const unsigned char *const buf_end) const
 {
   while(begin < end)
   {
@@ -322,8 +303,8 @@ size_t Tokenizador::tokenize_buffer(const unsigned char *readpoint, unsigned cha
     off_t rd_offset, buf_delta;
     while(readpoint < inbuf_end)
     {
-      url_precondition:
-      rd_offset = 0; buf_delta = outbuf + min_bufsize - writepoint;
+      //url_precondition:
+      rd_offset = 0; buf_delta = writepoint + min_bufsize - writepoint;
       memcpy(cmpbuf, readpoint, (buf_delta < 6 ? buf_delta : 6));
       normalize(cmpbuf, cmpbuf + 6);
       if(buf_delta >= 5 && strncmp(cmpbuf, "http:", 5) == 0)
@@ -333,7 +314,7 @@ size_t Tokenizador::tokenize_buffer(const unsigned char *readpoint, unsigned cha
       else if(buf_delta >= 4 && strncmp(cmpbuf, "ftp:", 4) == 0)
         rd_offset = 4;
 
-      url:
+      //url:
       if(rd_offset > 0) {
         memcpy(writepoint, readpoint, (size_t)rd_offset);
         readpoint += rd_offset;
@@ -348,7 +329,7 @@ size_t Tokenizador::tokenize_buffer(const unsigned char *readpoint, unsigned cha
       }
 
       c1 = *readpoint++;
-      multiword:
+      //multiword:
       if(delimiters['-'] && !delimiters[c1]) {
         do {
           *writepoint++ = c1;
@@ -363,7 +344,7 @@ size_t Tokenizador::tokenize_buffer(const unsigned char *readpoint, unsigned cha
         *writepoint++ = '\n';
       }
 
-      email:
+      //email:
       else if(!delimiters[c1] && delimiters['@'])
       {
         //TODO: watch the specific case specification
@@ -391,7 +372,7 @@ size_t Tokenizador::tokenize_buffer(const unsigned char *readpoint, unsigned cha
         *writepoint++ = '\n';
       }
 
-      acronym:
+      //acronym:
       else if(delimiters['.'] && !delimiters[c1])
       {
         *writepoint++ = c1;
@@ -410,12 +391,12 @@ size_t Tokenizador::tokenize_buffer(const unsigned char *readpoint, unsigned cha
         *writepoint++ = '\n';
       }
 
-      number:
+      //number:
       else if(/*number condition*/) {
         *writepoint++ = '\n';
       }
 
-      normal_word:
+      //normal_word:
       else {
         while(delimiters[c1] && readpoint < inbuf_end);
         while(!delimiters[c1] && readpoint < inbuf_end) {
@@ -426,7 +407,7 @@ size_t Tokenizador::tokenize_buffer(const unsigned char *readpoint, unsigned cha
       }
     }
   }
-  else // no special cases
+  else // no special
   {
     bool got_char = false;
     while(readpoint < inbuf_end)
@@ -447,11 +428,13 @@ size_t Tokenizador::tokenize_buffer(const unsigned char *readpoint, unsigned cha
     }
   }
   if(pasarAminuscSinAcentos)
-    normalize(outbuf, outbuf_end);
+    normalize(outbuf_begin, outbuf_begin + min_bufsize);
 
   return writepoint - outbuf_begin; // written bytes
 }
 
+
+bool Tokenizador::special_delimiters_done = false;
 
 static void Tokenizador::initialize_special_delimiters()
 {
