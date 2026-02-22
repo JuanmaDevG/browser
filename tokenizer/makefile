@@ -1,16 +1,20 @@
-.PHONY: clean
+.PHONY= clean
 
 CC:=g++
 FLAGS:= -g -Wall -Werror -std=c++11 -I.
-DEBUG_LOG:= #-D DEBUG
-VPATH:=src test
-FILES:=$(shell ls src) main.cpp
-OUT:=practica1
+DEBUG:= #-D DEBUG
+LIBDIR=lib
+INCLUDEDIR=include
+_OBJ= tokenizador.o
+OBJ= $(patsubst %,$(LIBDIR)/%,$(_OBJ))
 
+all: practica1
 
-$(OUT): $(FILES)
-	$(CC) $(FLAGS) $(DEBUG_LOG) $^ -o $(OUT)
+practica1: src/main.cpp $(OBJ)
+	$(CC) $(OPTIONS) $(DEBUG) -I$(INCLUDEDIR) src/main.cpp $(OBJ) -o practica1
 
+$(LIBDIR)/%.o: $(LIBDIR)/%.cpp $(OBJ)
+	$(CC) $(OPTIONS) $(DEBUG) -c -I$(INCLUDEDIR) -o $@ $<
 
 clean:
-	rm practica1
+	rm -f $(OBJ) practica1
