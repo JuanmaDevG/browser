@@ -1,19 +1,19 @@
 .PHONY= clean
 
-CC:=g++
-FLAGS:= -g -Wall -Werror -std=c++11 -I.
-DEBUG:= #-D DEBUG
+CC=g++
+OPTIONS= -g -Wall -Werror -std=c++11
+DEBUG= #-D DEBUG
 LIBDIR=lib
 INCLUDEDIR=include
 _OBJ= tokenizador.o
-OBJ= $(patsubst %,$(LIBDIR)/%,$(_OBJ))
+OBJ = $(patsubst %,$(LIBDIR)/%,$(_OBJ))
 
 all: practica1
 
 practica1: src/main.cpp $(OBJ)
 	$(CC) $(OPTIONS) $(DEBUG) -I$(INCLUDEDIR) src/main.cpp $(OBJ) -o practica1
 
-$(LIBDIR)/%.o: $(LIBDIR)/%.cpp $(OBJ)
+$(LIBDIR)/%.o : $(LIBDIR)/%.cpp $(INCLUDEDIR)/%.h
 	$(CC) $(OPTIONS) $(DEBUG) -c -I$(INCLUDEDIR) -o $@ $<
 
 clean:

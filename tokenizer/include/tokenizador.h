@@ -87,7 +87,7 @@ private:
   };
 
   static bool special_delimiters_done;
-  static void initialize_sepcial_delimiters();
+  static void initialize_special_delimiters();
 };
 
 #endif //TOKENIZADOR_H

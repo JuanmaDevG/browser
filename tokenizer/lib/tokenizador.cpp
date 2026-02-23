@@ -12,6 +12,11 @@
 #define is_numeric(n) (n >= NUMERIC_START_POINT && n <= NUMERIC_END_POINT)
 
 
+bitset<ISO_8859_SIZE> Tokenizador::url_delimiters;
+bitset<ISO_8859_SIZE> Tokenizador::email_delimiters;
+const unsigned char Tokenizador::iso8859_norm_table[256];
+
+
 ostream& operator<<(ostream& os, const Tokenizador& tk)
 {
   cout << "DELIMITADORES: ";
@@ -95,7 +100,7 @@ bool Tokenizador::Tokenizar(const string& i, const string& f)
     cerr << "No se ha encontrado el fichero: " << i << endl;
     return false;
   }
-  int o_fd = open(o.c_str(), O_RDWR | O_CREAT, S_IRUSR | S_IWUSR);
+  int o_fd = open(f.c_str(), O_RDWR | O_CREAT, S_IRUSR | S_IWUSR);
   if(o_fd < 0) {
     cerr << "No se pudo crear el fichero: " << f << endl;
     return false;
@@ -104,15 +109,15 @@ bool Tokenizador::Tokenizar(const string& i, const string& f)
   struct stat fileinfo;
   fstat(i_fd, &fileinfo);
   close(i_fd);
-  const unsigned char *const inbuf = (const unsigned char*)mmap(nullptr, fileinfo.st_size, PROT_READ, MAP_SHARED, inbuf_fd, 0);
+  const unsigned char *const inbuf = (const unsigned char*)mmap(nullptr, fileinfo.st_size, PROT_READ, MAP_SHARED, i_fd, 0);
   if(inbuf == MAP_FAILED) {
     cerr << "No se ha podido mapear el fichero de entrada: " << i << endl;
     return false;
   }
-  madvise(const_cast<void*>(inbuf), fileinfo.st_size, MADV_SEQUENTIAL | MADV_WILLNEED);
+  madvise(const_cast<unsigned char*>(inbuf), fileinfo.st_size, MADV_SEQUENTIAL | MADV_WILLNEED);
 
   ftruncate(o_fd, (off_t)fileinfo.st_size);
-  unsigned char *const outbuf = (const unsigned char*)mmap(nullptr, fileinfo.st_size, PROT_WRITE, MAP_SHARED, o_fd, 0);
+  unsigned char *const outbuf = (unsigned char*)mmap(nullptr, fileinfo.st_size, PROT_WRITE, MAP_SHARED, o_fd, 0);
   if(outbuf == MAP_FAILED)
   {
     cerr << "No se pudo mapear el fichero de salida: " << f << endl;
@@ -123,7 +128,7 @@ bool Tokenizador::Tokenizar(const string& i, const string& f)
 
   const size_t written_bytes = tokenize_buffer(inbuf, outbuf, fileinfo.st_size);
 
-  munmap(inbuf, fileinfo.st_size);
+  munmap(const_cast<unsigned char*>(inbuf), fileinfo.st_size);
   msync(outbuf, fileinfo.st_size, MS_ASYNC);
   munmap(outbuf, fileinfo.st_size);
   ftruncate(o_fd, written_bytes);
@@ -142,7 +147,7 @@ bool Tokenizador::TokenizarListaFicheros(const string& i)
   close(r_fd);
   if(rbuf == MAP_FAILED)
     return false;
-  madvise(const_cast<void*>(rbuf), r_info.st_size, MADV_SEQUENTIAL);
+  madvise(const_cast<unsigned char*>(rbuf), r_info.st_size, MADV_SEQUENTIAL);
   const unsigned char *const rbuf_end = rbuf + r_info.st_size;
   string inpath, outpath;
 
@@ -157,7 +162,7 @@ bool Tokenizador::TokenizarListaFicheros(const string& i)
     Tokenizar(inpath, outpath);
   }
 
-  munmap(const_cast<void*>(rbuf), r_info.st_size);
+  munmap(const_cast<unsigned char*>(rbuf), r_info.st_size);
   return true;
 }
 
@@ -187,7 +192,7 @@ bool Tokenizador::TokenizarDirectorio(const string& dirAIndexar)
     memcpy(path_buf + dir_len + 1, dname, nlen + 1);
 
     if (entry->d_type == DT_DIR) {
-      TokenizarDirectorio(path_buf, dir_len + nlen + 1);
+      TokenizarDirectorio(string(path_buf, dir_len + nlen + 1));
     } else {
       char* out = path_buf + 4096;
       memcpy(out, path_buf, dir_len + nlen + 2);
@@ -307,11 +312,11 @@ size_t Tokenizador::tokenize_buffer(const unsigned char *readpoint, unsigned cha
       rd_offset = 0; buf_delta = writepoint + min_bufsize - writepoint;
       memcpy(cmpbuf, readpoint, (buf_delta < 6 ? buf_delta : 6));
       normalize(cmpbuf, cmpbuf + 6);
-      if(buf_delta >= 5 && strncmp(cmpbuf, "http:", 5) == 0)
+      if(buf_delta >= 5 && strncmp((const char*)cmpbuf, "http:", 5) == 0)
         rd_offset = 5;
-      else if(buf_delta >= 6 && strncmp(cmpbuf, "https:", 6) == 0)
+      else if(buf_delta >= 6 && strncmp((const char*)cmpbuf, "https:", 6) == 0)
         rd_offset = 6;
-      else if(buf_delta >= 4 && strncmp(cmpbuf, "ftp:", 4) == 0)
+      else if(buf_delta >= 4 && strncmp((const char*)cmpbuf, "ftp:", 4) == 0)
         rd_offset = 4;
 
       //url:
@@ -321,7 +326,7 @@ size_t Tokenizador::tokenize_buffer(const unsigned char *readpoint, unsigned cha
         writepoint += rd_offset;
         while(readpoint < inbuf_end) {
           c1 = *readpoint++;
-          if(delimiters[c1] && !url_delimiters[c1])
+          if(delimiters[c1] && !Tokenizador::url_delimiters[c1])
             break;
           *writepoint++ = c1;
         }
@@ -392,7 +397,7 @@ size_t Tokenizador::tokenize_buffer(const unsigned char *readpoint, unsigned cha
       }
 
       //number:
-      else if(/*number condition*/) {
+      else if(/*number condition*/false) {
         *writepoint++ = '\n';
       }
 
@@ -436,17 +441,17 @@ size_t Tokenizador::tokenize_buffer(const unsigned char *readpoint, unsigned cha
 
 bool Tokenizador::special_delimiters_done = false;
 
-static void Tokenizador::initialize_special_delimiters()
+void Tokenizador::initialize_special_delimiters()
 {
   static const unsigned char raw_url_delim[] = "_:/.?&-=#@";
   static const unsigned char raw_email_delim[] = ".-_";
   size_t N = sizeof(raw_url_delim) -1;
 
-  for(int i = 0; i < N; ++i)
+  for(size_t i = 0; i < N; ++i)
     Tokenizador::url_delimiters.set(raw_url_delim[i]);
 
   N = sizeof(raw_email_delim) -1;
-  for(int i=0; i < N; ++i)
+  for(size_t i=0; i < N; ++i)
     Tokenizador::email_delimiters.set(raw_email_delim[i]);
 
   special_delimiters_done = true;

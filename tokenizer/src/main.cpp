@@ -20,13 +20,10 @@ void imprimirListaSTL(const list<string>& cadena)
 int
 main(void)
 {
-        bool kCasosEspeciales = false, kpasarAminusculas = false;
+  list<string> lt1, lt2;
 
-        list<string> lt1, lt2;
-
-Tokenizador a("@.&", false, false);
-list<string> tokens;
-a.AnyadirDelimitadoresPalabra("&_:/.?&-=#@");
-cout << a << endl;
-
+  Tokenizador a("@.&", false, false);
+  list<string> tokens;
+  a.AnyadirDelimitadoresPalabra("&_:/.?&-=#@");
+  cout << a << endl;
 }
