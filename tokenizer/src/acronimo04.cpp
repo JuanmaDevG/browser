@@ -20,7 +20,6 @@ void imprimirListaSTL(const list<string>& cadena)
 int
 main(void)
 {
-        bool kCasosEspeciales = true, kpasarAminusculas = false;
 
         list<string> lt1, lt2;
 

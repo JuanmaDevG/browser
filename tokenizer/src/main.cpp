@@ -1,11 +1,11 @@
-#include <iostream>
+#include <iostream> 
 #include <string>
-#include <list>
+#include <list> 
 #include "tokenizador.h"
 
 using namespace std;
 
-///////// ComprobaciÃ³n de que vacÃ­e la lista resultado
+///////// Comprobación de que vacíe la lista resultado
 
 void imprimirListaSTL(const list<string>& cadena)
 {
@@ -20,10 +20,41 @@ void imprimirListaSTL(const list<string>& cadena)
 int
 main(void)
 {
-  list<string> lt1, lt2;
 
-  Tokenizador a("@.&", false, false);
-  list<string> tokens;
-  a.AnyadirDelimitadoresPalabra("&_:/.?&-=#@");
-  cout << a << endl;
+	list<string> lt1, lt2;
+
+Tokenizador a("-#", true, false); 
+list<string> tokens; 
+
+a.DelimitadoresPalabra("@.&");
+a.Tokenizar("catedraTelefonicaUA@iuii.ua.es p1 p2", tokens);
+	imprimirListaSTL(tokens);
+
+a.Tokenizar("pal1 @iuii.ua.es p1 p2", tokens);
+	imprimirListaSTL(tokens);
+
+a.DelimitadoresPalabra("&.");
+a.Tokenizar("catedraTelefonicaUA@iuii.ua.es p1 p2", tokens);
+	imprimirListaSTL(tokens);
+
+a.Tokenizar("pal1 @iuii.ua.es p1 p2", tokens);
+	imprimirListaSTL(tokens);
+
+a.Tokenizar("pal1&@iuii.ua.es p1 p2", tokens);
+	imprimirListaSTL(tokens);
+
+a.Tokenizar("pal1&catedra@iuii.ua.es p1 p2", tokens);
+	imprimirListaSTL(tokens);
+
+a.PasarAminuscSinAcentos(true);
+a.Tokenizar("catedraTelefonicaUA@iuii.ua.es p1 p2", tokens);
+	imprimirListaSTL(tokens);
+
+
+a.DelimitadoresPalabra("@.&");
+a.CasosEspeciales (false);
+a.Tokenizar("catedraTelefonicaUA@iuii.ua.es p1 p2", tokens);
+	imprimirListaSTL(tokens);
+
+
 }
