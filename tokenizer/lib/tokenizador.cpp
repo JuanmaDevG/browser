@@ -10,7 +10,7 @@
 
 
 #define is_numeric(n) (n >= NUMERIC_START_POINT && n <= NUMERIC_END_POINT)
-#define dot_ot_comma(c) (c == '.' || c == ',')
+#define dot_or_comma(c) (c == '.' || c == ',')
 
 
 bitset<ISO_8859_SIZE> Tokenizador::url_delimiters;
@@ -108,8 +108,8 @@ bool Tokenizador::Tokenizar(const string& i, const string& f)
 
   struct stat fileinfo;
   fstat(i_fd, &fileinfo);
-  close(i_fd);
   const unsigned char *const inbuf = (const unsigned char*)mmap(nullptr, fileinfo.st_size, PROT_READ, MAP_SHARED, i_fd, 0);
+  close(i_fd);
   if(inbuf == MAP_FAILED) {
     cerr << "No se ha podido mapear el fichero de entrada: " << i << endl;
     return false;
@@ -117,7 +117,7 @@ bool Tokenizador::Tokenizar(const string& i, const string& f)
   madvise(const_cast<unsigned char*>(inbuf), fileinfo.st_size, MADV_SEQUENTIAL | MADV_WILLNEED);
 
   ftruncate(o_fd, (off_t)fileinfo.st_size + (fileinfo.st_size >> 1)); // outbuf_size = inbuf_size * 1.5
-  unsigned char *const outbuf = (unsigned char*)mmap(nullptr, fileinfo.st_size, PROT_WRITE, MAP_SHARED, o_fd, 0);
+  unsigned char *const outbuf = (unsigned char*)mmap(nullptr, fileinfo.st_size + (fileinfo.st_size >> 1), PROT_WRITE, MAP_SHARED, o_fd, 0);
   if(outbuf == MAP_FAILED)
   {
     cerr << "No se pudo mapear el fichero de salida: " << f << endl;
@@ -154,7 +154,7 @@ bool Tokenizador::TokenizarListaFicheros(const string& i)
   const unsigned char *backpoint = rbuf, *frontpoint = rbuf;
   while(backpoint < rbuf_end)
   {
-    while(*frontpoint != '\n') ++frontpoint;
+    while(backpoint < rbuf_end && *frontpoint != '\n') ++frontpoint;
     inpath.assign(backpoint, frontpoint);
     outpath.assign(backpoint, frontpoint).append(".tk");
     ++frontpoint;
@@ -330,24 +330,29 @@ size_t Tokenizador::tokenize_buffer(const unsigned char *readpoint, const size_t
             break;
           *writepoint++ = c1;
         }
+        *writepoint++ = '\n';
         continue;
       }
 
       not_url:
-      if(delimiters[(c1 = *readpoint++)])
+      if(delimiters[(c1 = *readpoint)])
       {
-        if(dot_or_comma(c1)) goto decimal_with_delimiter_start;
-        skip_delimiters:
+        //skip_delimiters:
         while(readpoint < inbuf_end)
         {
           c1 = *readpoint++;
-          if(dot_or_comma(c1)) goto decimal_with_delimiter_start;
+          if(dot_or_comma(c1)) {
+            if(!(readpoint < inbuf_end)) break;
+            c2 = *readpoint++;
+            if(is_numeric(c2)) goto decimal_with_delimiter_start;
+            if(delimiters[c2]) continue;
+            goto no_delimiter_start;
+          }
           if(!delimiters[c1]) goto no_delimiter_start;
         }
+        continue;
+
         decimal_with_delimiter_start:
-        if(!(readpoint < inbuf_end)) break;
-        if(delimiters[(c2 = *readpoint++)])
-          goto skip_delimiters;
         *writepoint++ = '0';
         *writepoint++ = c1;
         *writepoint++ = c2;
@@ -370,9 +375,10 @@ size_t Tokenizador::tokenize_buffer(const unsigned char *readpoint, const size_t
             if(!is_numeric(c2))
               goto _acronym_nodelim_start;
           }
-          else if(delimiter[c1]) { break; }
+          else if(delimiters[c1]) { break; }
           else /* c1 no delimiter */ goto cleanup_acronym;
         }
+        *writepoint++ = '\n';
         continue;
 
         cleanup_acronym:
@@ -394,6 +400,7 @@ size_t Tokenizador::tokenize_buffer(const unsigned char *readpoint, const size_t
         }
         *writepoint++ = c1;
       }
+      *writepoint++ = '\n';
       continue;
 
       email:
@@ -406,6 +413,7 @@ size_t Tokenizador::tokenize_buffer(const unsigned char *readpoint, const size_t
       while(readpoint < inbuf_end) {
         c1 = *readpoint++;
         if(email_delimiters[c1]) { //TODO: what when c1 = mail_delim && c2 = delim or mail_delim, may jump back?
+          if(!(readpoint < inbuf_end)) break;
           c2 = *readpoint++;
           if(delimiters[c2] || email_delimiters[c2])
             break;
@@ -421,6 +429,7 @@ size_t Tokenizador::tokenize_buffer(const unsigned char *readpoint, const size_t
         else if(delimiters[c1]) { break; }
         *writepoint++ = c1;
       }
+      *writepoint++ = '\n';
       continue;
 
       acronym:
@@ -442,6 +451,7 @@ size_t Tokenizador::tokenize_buffer(const unsigned char *readpoint, const size_t
         }
         *writepoint++ = c1;
       }
+      *writepoint++ = '\n';
       continue;
 
       multiword:
@@ -450,7 +460,6 @@ size_t Tokenizador::tokenize_buffer(const unsigned char *readpoint, const size_t
       if(delimiters[c2]) continue;
       *writepoint++ = c1;
       *writepoint++ = c2;
-      _acronym_nodelim_start:
       while(readpoint < inbuf_end) {
         c1 = *readpoint++;
         if(c1 == '-') {
@@ -463,6 +472,7 @@ size_t Tokenizador::tokenize_buffer(const unsigned char *readpoint, const size_t
         }
         *writepoint++ = c1;
       }
+      *writepoint++ = '\n';
       continue;
     }
   }
@@ -475,19 +485,16 @@ size_t Tokenizador::tokenize_buffer(const unsigned char *readpoint, const size_t
         ++readpoint;
         if(got_char) {
           got_char = false;
-          *writepoint = '\n';
-          ++writepoint;
+          *writepoint++ = '\n';
         }
         continue;
       }
       got_char = true;
-      *writepoint = *readpoint;
-      ++readpoint;
-      ++writepoint;
+      *writepoint++ = *readpoint++;
     }
   }
   if(pasarAminuscSinAcentos)
-    normalize(const_cast<unsigned char*>(outbuf_begin), outbuf_begin + r_bufsize);
+    normalize(const_cast<unsigned char*>(outbuf_begin), outbuf_begin + (writepoint - outbuf_begin));
 
   return writepoint - outbuf_begin; // written bytes
 }

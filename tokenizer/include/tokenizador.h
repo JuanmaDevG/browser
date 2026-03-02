@@ -62,7 +62,7 @@ private:
   void default_delimiters();
   void add_delimiters(const unsigned char *p, const size_t n);
   void normalize(unsigned char *buf, const unsigned char *const buf_end) const;
-  size_t tokenize_buffer(const unsigned char *inbuf, unsigned char *outbuf, const size_t min_bufsize) const;
+  size_t tokenize_buffer(const unsigned char *inbuf, const size_t min_bufsize, unsigned char* outbuf) const;
 
   static bitset<ISO_8859_SIZE> url_delimiters;
   static bitset<ISO_8859_SIZE> email_delimiters;
