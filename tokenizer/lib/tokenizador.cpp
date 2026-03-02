@@ -10,6 +10,7 @@
 
 
 #define is_numeric(n) (n >= NUMERIC_START_POINT && n <= NUMERIC_END_POINT)
+#define dot_ot_comma(c) (c == '.' || c == ',')
 
 
 bitset<ISO_8859_SIZE> Tokenizador::url_delimiters;
@@ -69,7 +70,6 @@ Tokenizador& Tokenizador::operator=(const Tokenizador& tk)
 }
 
 
-//TODO: outbuf size update to support decimal numbers
 void Tokenizador::Tokenizar(const string& str, list<string>& tokens)
 {
   tokens.clear();
@@ -303,10 +303,12 @@ size_t Tokenizador::tokenize_buffer(const unsigned char *readpoint, const size_t
     unsigned char c1, c2;
     unsigned char cmpbuf[6];
     off_t rd_offset, buf_delta;
+    unsigned char *buf_checkpoint;
     while(readpoint < inbuf_end)
     {
       //url_precondition:
       rd_offset = 0; buf_delta = inbuf_end - readpoint;
+      if(buf_delta < 5) goto not_url;
       memcpy(cmpbuf, readpoint, (buf_delta < 6 ? buf_delta : 6));
       normalize(cmpbuf, cmpbuf + 6);
       if(buf_delta >= 5 && strncmp((const char*)cmpbuf, "http:", 5) == 0)
@@ -321,88 +323,147 @@ size_t Tokenizador::tokenize_buffer(const unsigned char *readpoint, const size_t
         memcpy(writepoint, readpoint, (size_t)rd_offset);
         readpoint += rd_offset;
         writepoint += rd_offset;
-        while(readpoint < inbuf_end) {
+        while(readpoint < inbuf_end)
+        {
           c1 = *readpoint++;
           if(delimiters[c1] && !Tokenizador::url_delimiters[c1])
             break;
           *writepoint++ = c1;
         }
+        continue;
       }
 
-      c1 = *readpoint++;
-      //multiword:
-      if(delimiters['-'] && !delimiters[c1]) {
-        do {
-          *writepoint++ = c1;
-          c1 = *readpoint++;
-          if(c1 == '-') {
-            if(readpoint == inbuf_end || delimiters[(c2 = *readpoint++)])
-              break;
-            *writepoint++ = c1;
-            c1 = c2;
-          }
-        } while(readpoint < inbuf_end);
-      }
-
-      //email:
-      else if(!delimiters[c1] && delimiters['@'])
+      not_url:
+      if(delimiters[(c1 = *readpoint++)])
       {
-        //TODO: watch the specific case specification
-        //TODO: second @ not allowed, store @pos and do \n and return to @pos+1
-        bool valid_email = true;
-        *writepoint++ = c1;
-        while(readpoint < inbuf_end) {
-          if((c1 = *readpoint++) == '@') {
-            *writepoint++ = c1;
-            break;
-          }
-          if(delimiters[c1]) {
-            valid_email = false;
-            break;
-          }
-          *writepoint++ = c1;
-        }
-        if(!valid_email) continue;
-        while(readpoint < inbuf_end) {
+        if(dot_or_comma(c1)) goto decimal_with_delimiter_start;
+        skip_delimiters:
+        while(readpoint < inbuf_end)
+        {
           c1 = *readpoint++;
-          if(delimiters[c1] && !email_delimiters[c1])
-            break;
-          *writepoint++ = c1;
+          if(dot_or_comma(c1)) goto decimal_with_delimiter_start;
+          if(!delimiters[c1]) goto no_delimiter_start;
         }
-      }
+        decimal_with_delimiter_start:
+        if(!(readpoint < inbuf_end)) break;
+        if(delimiters[(c2 = *readpoint++)])
+          goto skip_delimiters;
+        *writepoint++ = '0';
+        *writepoint++ = c1;
+        *writepoint++ = c2;
 
-      //acronym:
-      else if(delimiters['.'] && !delimiters[c1])
-      {
-        *writepoint++ = c1;
-        while(readpoint < inbuf_end) {
+        decimal_number:
+        buf_checkpoint = nullptr;
+        while(readpoint < inbuf_end)
+        {
           c1 = *readpoint++;
-          if(c1 == '.') {
-            if(readpoint == inbuf_end) break;
+          if(is_numeric(c1)) {
+            *writepoint++ = c1;
+          }
+          else if(dot_or_comma(c1)) {
+            buf_checkpoint = writepoint;
+            if(!(readpoint < inbuf_end)) break;
             c2 = *readpoint++;
             if(delimiters[c2]) break;
             *writepoint++ = c1;
             *writepoint++ = c2;
-            continue;
+            if(!is_numeric(c2))
+              goto _acronym_nodelim_start;
           }
-          *writepoint++ = c1;
+          else if(delimiter[c1]) { break; }
+          else /* c1 no delimiter */ goto cleanup_acronym;
         }
+        continue;
+
+        cleanup_acronym:
+        if(buf_checkpoint) *buf_checkpoint = '\n';
+        goto _acronym_nodelim_start;
       }
 
-      //number:
-      else if(/*number condition*/false) {
-        //TODO: number case
-      }
-
-      //normal_word:
-      else {
-        while(delimiters[c1] && readpoint < inbuf_end);
-        while(!delimiters[c1] && readpoint < inbuf_end) {
-          *writepoint++ = c1;
-          c1 = *readpoint++;
+      no_delimiter_start:
+      *writepoint++ = c1;
+      if(is_numeric(c1)) goto decimal_number;
+      while(readpoint < inbuf_end)
+      {
+        c1 = *readpoint++;
+        if(delimiters[c1]) {
+          if(c1 == '@') goto email;
+          if(c1 == '.') goto acronym;
+          if(c1 == '-') goto multiword;
+          break;
         }
+        *writepoint++ = c1;
       }
-      *writepoint++ = '\n';
+      continue;
+
+      email:
+      buf_checkpoint = writepoint;
+      if(!(readpoint < inbuf_end)) break;
+      c2 = *readpoint++;
+      if(delimiters[c2] || email_delimiters[c2]) continue;
+      *writepoint++ = c1;
+      *writepoint++ = c2;
+      while(readpoint < inbuf_end) {
+        c1 = *readpoint++;
+        if(email_delimiters[c1]) { //TODO: what when c1 = mail_delim && c2 = delim or mail_delim, may jump back?
+          c2 = *readpoint++;
+          if(delimiters[c2] || email_delimiters[c2])
+            break;
+          *writepoint++ = c1;
+          *writepoint++ = c2;
+          continue;
+        }
+        else if(c1 == '@') {
+          *buf_checkpoint = '\n';
+          *writepoint++ = '\n';
+          break;
+        }
+        else if(delimiters[c1]) { break; }
+        *writepoint++ = c1;
+      }
+      continue;
+
+      acronym:
+      if(!(readpoint < inbuf_end)) break;
+      c2 = *readpoint++;
+      if(delimiters[c2]) continue;
+      *writepoint++ = c1;
+      *writepoint++ = c2;
+      _acronym_nodelim_start:
+      while(readpoint < inbuf_end) {
+        c1 = *readpoint++;
+        if(c1 == '.') {
+          if(!(readpoint < inbuf_end)) break;
+          c2 = *readpoint++;
+          if(delimiters[c2]) break;
+          *writepoint++ = c1;
+          *writepoint++ = c2;
+          continue;
+        }
+        *writepoint++ = c1;
+      }
+      continue;
+
+      multiword:
+      if(!(readpoint < inbuf_end)) break;
+      c2 = *readpoint++;
+      if(delimiters[c2]) continue;
+      *writepoint++ = c1;
+      *writepoint++ = c2;
+      _acronym_nodelim_start:
+      while(readpoint < inbuf_end) {
+        c1 = *readpoint++;
+        if(c1 == '-') {
+          if(!(readpoint < inbuf_end)) break;
+          c2 = *readpoint++;
+          if(delimiters[c2]) break;
+          *writepoint++ = c1;
+          *writepoint++ = c2;
+          continue;
+        }
+        *writepoint++ = c1;
+      }
+      continue;
     }
   }
   else // no special
