@@ -295,6 +295,13 @@ extern inline void Tokenizador::normalize(unsigned char *buf, const unsigned cha
 
 size_t Tokenizador::tokenize_buffer(const unsigned char *readpoint, const size_t r_bufsize, unsigned char *writepoint) const
 {
+  if(pasarAminuscSinAcentos) {
+    unsigned char *tmp_buf = new unsigned char[r_bufsize];
+    for(size_t i=0; i < r_bufsize; ++i)
+      tmp_buf[i] = iso8859_norm_table[readpoint[i]];
+    readpoint = tmp_buf;
+  }
+
   const unsigned char *const inbuf_end = readpoint + r_bufsize;
   const unsigned char *const outbuf_begin = writepoint;
 
@@ -308,9 +315,8 @@ size_t Tokenizador::tokenize_buffer(const unsigned char *readpoint, const size_t
     {
       //url_precondition:
       rd_offset = 0; buf_delta = inbuf_end - readpoint;
-      if(buf_delta < 5) goto not_url;
+      if(buf_delta < 5) goto delimiter_start_check;
       memcpy(cmpbuf, readpoint, (buf_delta < 6 ? buf_delta : 6));
-      normalize(cmpbuf, cmpbuf + 6);
       if(buf_delta >= 5 && strncmp((const char*)cmpbuf, "http:", 5) == 0)
         rd_offset = 5;
       else if(buf_delta >= 6 && strncmp((const char*)cmpbuf, "https:", 6) == 0)
@@ -334,7 +340,7 @@ size_t Tokenizador::tokenize_buffer(const unsigned char *readpoint, const size_t
         continue;
       }
 
-      not_url:
+      delimiter_start_check:
       if(delimiters[(c1 = *readpoint)])
       {
         //skip_delimiters:
@@ -385,6 +391,7 @@ size_t Tokenizador::tokenize_buffer(const unsigned char *readpoint, const size_t
         if(buf_checkpoint) *buf_checkpoint = '\n';
         goto _acronym_nodelim_start;
       }
+      else ++readpoint;
 
       no_delimiter_start:
       *writepoint++ = c1;
@@ -492,10 +499,12 @@ size_t Tokenizador::tokenize_buffer(const unsigned char *readpoint, const size_t
       got_char = true;
       *writepoint++ = *readpoint++;
     }
+    if(!got_char) *writepoint++ = '\n';
   }
-  if(pasarAminuscSinAcentos)
-    normalize(const_cast<unsigned char*>(outbuf_begin), outbuf_begin + (writepoint - outbuf_begin));
 
+  if(pasarAminuscSinAcentos) {
+    delete[] readpoint;
+  }
   return writepoint - outbuf_begin; // written bytes
 }
 
