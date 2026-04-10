@@ -1,4 +1,4 @@
-.PHONY= clean
+.PHONY= clean corpus
 
 CC=g++
 OPTIONS= -g -Wall -Werror -std=c++11
@@ -18,3 +18,6 @@ $(LIBDIR)/%.o : $(LIBDIR)/%.cpp $(INCLUDEDIR)/%.h
 
 clean:
 	rm -f $(OBJ) practica1
+
+corpus:
+	rm corpus/*.tk

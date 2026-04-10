@@ -1,0 +1,37 @@
+[
+  {
+    "arguments": [
+      "/usr/bin/g++",
+      "-g",
+      "-Wall",
+      "-Werror",
+      "-std=c++11",
+      "-c",
+      "-Iinclude",
+      "-o",
+      "lib/tokenizador.o",
+      "lib/tokenizador.cpp"
+    ],
+    "directory": "/home/juan/Dev/public/browser/tokenizer",
+    "file": "/home/juan/Dev/public/browser/tokenizer/lib/tokenizador.cpp",
+    "output": "/home/juan/Dev/public/browser/tokenizer/lib/tokenizador.o"
+  },
+  {
+    "arguments": [
+      "/usr/bin/g++",
+      "-c",
+      "-g",
+      "-Wall",
+      "-Werror",
+      "-std=c++11",
+      "-Iinclude",
+      "lib/tokenizador.o",
+      "-o",
+      "practica1",
+      "src/main.cpp"
+    ],
+    "directory": "/home/juan/Dev/public/browser/tokenizer",
+    "file": "/home/juan/Dev/public/browser/tokenizer/src/main.cpp",
+    "output": "/home/juan/Dev/public/browser/tokenizer/practica1"
+  }
+]

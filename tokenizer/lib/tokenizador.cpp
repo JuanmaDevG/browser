@@ -1,89 +1,81 @@
 #include "tokenizador.h"
 
-#include <sys/mman.h>
-#include <fcntl.h>
-#include <sys/stat.h>
-#include <unistd.h>
-#include <sys/types.h>
-#include <dirent.h>
 #include <cstring>
-
+#include <dirent.h>
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <unistd.h>
 
 #define is_numeric(n) (n >= NUMERIC_START_POINT && n <= NUMERIC_END_POINT)
 #define dot_or_comma(c) (c == '.' || c == ',')
-
 
 bitset<ISO_8859_SIZE> Tokenizador::url_delimiters;
 bitset<ISO_8859_SIZE> Tokenizador::email_delimiters;
 const unsigned char Tokenizador::iso8859_norm_table[256];
 
-
-ostream& operator<<(ostream& os, const Tokenizador& tk)
-{
+ostream &operator<<(ostream &os, const Tokenizador &tk) {
   cout << "DELIMITADORES: ";
-  for(size_t i=0; i < ISO_8859_SIZE; ++i)
-  {
-    if(tk.delimiters[i]) cout << (char)i;
+  for (size_t i = 0; i < ISO_8859_SIZE; ++i) {
+    if (tk.delimiters[i])
+      cout << (char)i;
   }
 
-  cout << " TRATA DE CASOS ESPECIALES: " << tk.casosEspeciales 
-    << " PASAR A MINUSCULAS Y SIN ACENTOS: " << tk.pasarAminuscSinAcentos
-    << flush;
+  cout << " TRATA DE CASOS ESPECIALES: " << tk.casosEspeciales
+       << " PASAR A MINUSCULAS Y SIN ACENTOS: " << tk.pasarAminuscSinAcentos
+       << flush;
 
   return os;
 }
 
-
-Tokenizador::Tokenizador(const string& delimitadoresPalabra, const bool casosEspeciales, const bool minuscSinAcentos) :
-  casosEspeciales(casosEspeciales), pasarAminuscSinAcentos(minuscSinAcentos), delimiters()
-{
+Tokenizador::Tokenizador(const string &delimitadoresPalabra,
+                         const bool casosEspeciales,
+                         const bool minuscSinAcentos)
+    : casosEspeciales(casosEspeciales),
+      pasarAminuscSinAcentos(minuscSinAcentos), delimiters() {
   default_delimiters();
   add_delimiters(
-      reinterpret_cast<const unsigned char*>(delimitadoresPalabra.data()),
+      reinterpret_cast<const unsigned char *>(delimitadoresPalabra.data()),
       delimitadoresPalabra.size());
 }
 
+Tokenizador::Tokenizador(const Tokenizador &tk)
+    : casosEspeciales(tk.casosEspeciales),
+      pasarAminuscSinAcentos(tk.pasarAminuscSinAcentos),
+      delimiters(tk.delimiters) {}
 
-Tokenizador::Tokenizador(const Tokenizador& tk) :
-  casosEspeciales(tk.casosEspeciales),
-  pasarAminuscSinAcentos(tk.pasarAminuscSinAcentos),
-  delimiters(tk.delimiters) {}
-
-
-Tokenizador::Tokenizador() : casosEspeciales(true), pasarAminuscSinAcentos(false), delimiters()
-{
+Tokenizador::Tokenizador()
+    : casosEspeciales(true), pasarAminuscSinAcentos(false), delimiters() {
   default_delimiters();
-  static const unsigned char auto_delimiters[] = ",;:.-/+*\\ '\"{}[]()<>¡!¿?&#=\t@";
-  add_delimiters(auto_delimiters, sizeof(auto_delimiters) -1);
+  static const unsigned char auto_delimiters[] =
+      ",;:.-/+*\\ '\"{}[]()<>¡!¿?&#=\t@";
+  add_delimiters(auto_delimiters, sizeof(auto_delimiters) - 1);
 }
-
 
 Tokenizador::~Tokenizador() {}
 
-
-Tokenizador& Tokenizador::operator=(const Tokenizador& tk)
-{
+Tokenizador &Tokenizador::operator=(const Tokenizador &tk) {
   casosEspeciales = tk.casosEspeciales;
   pasarAminuscSinAcentos = tk.pasarAminuscSinAcentos;
   delimiters = tk.delimiters;
   return *this;
 }
 
-
-void Tokenizador::Tokenizar(const string& str, list<string>& tokens)
-{
+void Tokenizador::Tokenizar(const string &str, list<string> &tokens) {
   tokens.clear();
   const size_t inbuf_size = str.size();
-  const unsigned char *const inbuf = (const unsigned char*)str.data();
-  unsigned char *const outbuf = new unsigned char[inbuf_size + (inbuf_size >> 1)]; //outbut_size = inbuf_size * 1.5
+  const unsigned char *const inbuf = (const unsigned char *)str.data();
+  unsigned char *const outbuf =
+      new unsigned char[inbuf_size +
+                        (inbuf_size >> 1)]; // outbut_size = inbuf_size * 1.5
 
   const size_t written_bytes = tokenize_buffer(inbuf, inbuf_size, outbuf);
 
   const unsigned char *const outbuf_end = outbuf + written_bytes;
   const unsigned char *tbegin = outbuf, *tend = outbuf;
-  while(tbegin < outbuf_end)
-  {
-    while(*tend != '\n' && tend < outbuf_end)
+  while (tbegin < outbuf_end) {
+    while (*tend != '\n' && tend < outbuf_end)
       ++tend;
     tokens.emplace_back(tbegin, tend);
     ++tend;
@@ -92,34 +84,37 @@ void Tokenizador::Tokenizar(const string& str, list<string>& tokens)
   delete[] outbuf;
 }
 
-
-bool Tokenizador::Tokenizar(const string& i, const string& f)
-{
+bool Tokenizador::Tokenizar(const string &i, const string &f) {
   int i_fd = open(i.c_str(), O_RDONLY);
-  if(i_fd < 0) {
+  if (i_fd < 0) {
     cerr << "No se ha encontrado el fichero: " << i << endl;
     return false;
   }
   int o_fd = open(f.c_str(), O_RDWR | O_CREAT, S_IRUSR | S_IWUSR);
-  if(o_fd < 0) {
+  if (o_fd < 0) {
     cerr << "No se pudo crear el fichero: " << f << endl;
     return false;
   }
 
   struct stat fileinfo;
   fstat(i_fd, &fileinfo);
-  const unsigned char *const inbuf = (const unsigned char*)mmap(nullptr, fileinfo.st_size, PROT_READ, MAP_SHARED, i_fd, 0);
+  const unsigned char *const inbuf = (const unsigned char *)mmap(
+      nullptr, fileinfo.st_size, PROT_READ, MAP_SHARED, i_fd, 0);
   close(i_fd);
-  if(inbuf == MAP_FAILED) {
+  if (inbuf == MAP_FAILED) {
     cerr << "No se ha podido mapear el fichero de entrada: " << i << endl;
     return false;
   }
-  madvise(const_cast<unsigned char*>(inbuf), fileinfo.st_size, MADV_SEQUENTIAL | MADV_WILLNEED);
+  madvise(const_cast<unsigned char *>(inbuf), fileinfo.st_size,
+          MADV_SEQUENTIAL | MADV_WILLNEED);
 
-  ftruncate(o_fd, (off_t)fileinfo.st_size + (fileinfo.st_size >> 1)); // outbuf_size = inbuf_size * 1.5
-  unsigned char *const outbuf = (unsigned char*)mmap(nullptr, fileinfo.st_size + (fileinfo.st_size >> 1), PROT_WRITE, MAP_SHARED, o_fd, 0);
-  if(outbuf == MAP_FAILED)
-  {
+  ftruncate(o_fd,
+            (off_t)fileinfo.st_size +
+                (fileinfo.st_size >> 1)); // outbuf_size = inbuf_size * 1.5
+  unsigned char *const outbuf =
+      (unsigned char *)mmap(nullptr, fileinfo.st_size + (fileinfo.st_size >> 1),
+                            PROT_WRITE, MAP_SHARED, o_fd, 0);
+  if (outbuf == MAP_FAILED) {
     cerr << "No se pudo mapear el fichero de salida: " << f << endl;
     close(o_fd);
     return false;
@@ -128,7 +123,7 @@ bool Tokenizador::Tokenizar(const string& i, const string& f)
 
   const size_t written_bytes = tokenize_buffer(inbuf, fileinfo.st_size, outbuf);
 
-  munmap(const_cast<unsigned char*>(inbuf), fileinfo.st_size);
+  munmap(const_cast<unsigned char *>(inbuf), fileinfo.st_size);
   msync(outbuf, fileinfo.st_size, MS_ASYNC);
   munmap(outbuf, fileinfo.st_size);
   ftruncate(o_fd, written_bytes);
@@ -136,25 +131,25 @@ bool Tokenizador::Tokenizar(const string& i, const string& f)
   return true;
 }
 
-
-bool Tokenizador::TokenizarListaFicheros(const string& i)
-{
+bool Tokenizador::TokenizarListaFicheros(const string &i) {
   int r_fd = open(i.c_str(), O_RDONLY);
-  if(r_fd < 0) return false;
+  if (r_fd < 0)
+    return false;
   struct stat r_info;
   fstat(r_fd, &r_info);
-  const unsigned char *const rbuf = (const unsigned char*)mmap(nullptr, r_info.st_size, PROT_READ, MAP_SHARED, r_fd, 0);
+  const unsigned char *const rbuf = (const unsigned char *)mmap(
+      nullptr, r_info.st_size, PROT_READ, MAP_SHARED, r_fd, 0);
   close(r_fd);
-  if(rbuf == MAP_FAILED)
+  if (rbuf == MAP_FAILED)
     return false;
-  madvise(const_cast<unsigned char*>(rbuf), r_info.st_size, MADV_SEQUENTIAL);
+  madvise(const_cast<unsigned char *>(rbuf), r_info.st_size, MADV_SEQUENTIAL);
   const unsigned char *const rbuf_end = rbuf + r_info.st_size;
   string inpath, outpath;
 
   const unsigned char *backpoint = rbuf, *frontpoint = rbuf;
-  while(backpoint < rbuf_end)
-  {
-    while(backpoint < rbuf_end && *frontpoint != '\n') ++frontpoint;
+  while (backpoint < rbuf_end) {
+    while (backpoint < rbuf_end && *frontpoint != '\n')
+      ++frontpoint;
     inpath.assign(backpoint, frontpoint);
     outpath.assign(backpoint, frontpoint).append(".tk");
     ++frontpoint;
@@ -162,16 +157,14 @@ bool Tokenizador::TokenizarListaFicheros(const string& i)
     Tokenizar(inpath, outpath);
   }
 
-  munmap(const_cast<unsigned char*>(rbuf), r_info.st_size);
+  munmap(const_cast<unsigned char *>(rbuf), r_info.st_size);
   return true;
 }
 
-
-bool Tokenizador::TokenizarDirectorio(const string& dirAIndexar)
-{
+bool Tokenizador::TokenizarDirectorio(const string &dirAIndexar) {
   size_t dir_len = dirAIndexar.size();
   const char *const dir_name = dirAIndexar.c_str();
-  DIR* dir = opendir(dir_name);
+  DIR *dir = opendir(dir_name);
   if (!dir) {
     cerr << "No se ha encontrado el directorio: " << dirAIndexar << endl;
     return false;
@@ -179,125 +172,113 @@ bool Tokenizador::TokenizarDirectorio(const string& dirAIndexar)
 
   char path_buf[8192];
   memcpy(path_buf, dir_name, dir_len);
-  path_buf[dir_len] = '/';
-  
-  dirent* entry;
+  if (path_buf[dir_len - 1] != '/')
+    path_buf[dir_len] = '/';
+
+  dirent *entry;
   while ((entry = readdir(dir))) {
-    const char* dname = entry->d_name;
+    const char *dname = entry->d_name;
     if (dname[0] == '.' && (!dname[1] || (dname[1] == '.' && !dname[2])))
       continue;
 
     size_t nlen = strlen(dname);
-    //if (dir_len + nlen >= 4094) continue;
+    // if (dir_len + nlen >= 4094) continue;
+    if (strncmp(dname + nlen - 3, ".tk", 3) == 0)
+      continue;
     memcpy(path_buf + dir_len + 1, dname, nlen + 1);
 
     if (entry->d_type == DT_DIR) {
       TokenizarDirectorio(string(path_buf, dir_len + nlen + 1));
     } else {
-      char* out = path_buf + 4096;
+      char *out = path_buf + 4096;
       memcpy(out, path_buf, dir_len + nlen + 2);
       memcpy(out + dir_len + nlen + 1, ".tk", 4);
       Tokenizar(path_buf, out);
     }
   }
-  
+
   closedir(dir);
   return true;
 }
 
-
-void Tokenizador::DelimitadoresPalabra(const string& nuevoDelimiters)
-{
+void Tokenizador::DelimitadoresPalabra(const string &nuevoDelimiters) {
   delimiters.reset();
   default_delimiters();
   add_delimiters(
-      reinterpret_cast<const unsigned char*>(nuevoDelimiters.data()),
+      reinterpret_cast<const unsigned char *>(nuevoDelimiters.data()),
       nuevoDelimiters.size());
 }
 
-
-void Tokenizador::AnyadirDelimitadoresPalabra(const string& nuevoDelimiters)
-{
+void Tokenizador::AnyadirDelimitadoresPalabra(const string &nuevoDelimiters) {
   add_delimiters(
-      reinterpret_cast<const unsigned char*>(nuevoDelimiters.data()),
+      reinterpret_cast<const unsigned char *>(nuevoDelimiters.data()),
       nuevoDelimiters.size());
 }
 
-
-string Tokenizador::DelimitadoresPalabra() const
-{
+string Tokenizador::DelimitadoresPalabra() const {
   string result;
-  result.reserve(delimiters.count() +1);
+  result.reserve(delimiters.count() + 1);
 
-  for(size_t i=0; i < ISO_8859_SIZE -1; ++i)
-    if(delimiters[i])
+  for (size_t i = 0; i < ISO_8859_SIZE - 1; ++i)
+    if (delimiters[i])
       result.push_back((char)i);
 
   return result;
-} 
+}
 
-
-void Tokenizador::CasosEspeciales(const bool nuevoCasosEspeciales)
-{
+void Tokenizador::CasosEspeciales(const bool nuevoCasosEspeciales) {
   casosEspeciales = nuevoCasosEspeciales;
-  if(casosEspeciales) delimiters.set((size_t)' ');
-  else delimiters.reset((size_t)' ');
+  if (casosEspeciales)
+    delimiters.set((size_t)' ');
+  else
+    delimiters.reset((size_t)' ');
 }
 
+bool Tokenizador::CasosEspeciales() const { return casosEspeciales; }
 
-bool Tokenizador::CasosEspeciales() const
-{
-  return casosEspeciales;
-}
-
-
-void Tokenizador::PasarAminuscSinAcentos(const bool nuevoPasarAminuscSinAcentos)
-{
+void Tokenizador::PasarAminuscSinAcentos(
+    const bool nuevoPasarAminuscSinAcentos) {
   pasarAminuscSinAcentos = nuevoPasarAminuscSinAcentos;
 }
 
-
-bool Tokenizador::PasarAminuscSinAcentos() const
-{
+bool Tokenizador::PasarAminuscSinAcentos() const {
   return pasarAminuscSinAcentos;
 }
 
-
-extern inline void Tokenizador::default_delimiters()
-{
+extern inline void Tokenizador::default_delimiters() {
   delimiters.set((size_t)'\0');
   delimiters.set((size_t)'\n');
   delimiters.set((size_t)'\r');
-  if(casosEspeciales) delimiters.set((size_t)' ');
-  
+  if (casosEspeciales)
+    delimiters.set((size_t)' ');
+
   // Static delimiters for special cases
-  if(!Tokenizador::special_delimiters_done)
+  if (!Tokenizador::special_delimiters_done)
     Tokenizador::initialize_special_delimiters();
 }
 
-
-extern inline void Tokenizador::add_delimiters(const unsigned char *delim, const size_t n)
-{
-  for(size_t i=0; i < n; ++i)
+extern inline void Tokenizador::add_delimiters(const unsigned char *delim,
+                                               const size_t n) {
+  for (size_t i = 0; i < n; ++i)
     delimiters.set((size_t)delim[i]);
 }
 
-
-extern inline void Tokenizador::normalize(unsigned char *buf, const unsigned char *const buf_end) const
-{
-  while(buf < buf_end)
-  {
+extern inline void
+Tokenizador::normalize(unsigned char *buf,
+                       const unsigned char *const buf_end) const {
+  while (buf < buf_end) {
     *buf = iso8859_norm_table[*buf];
     ++buf;
   }
 }
 
-
-size_t Tokenizador::tokenize_buffer(const unsigned char *readpoint, const size_t r_bufsize, unsigned char *writepoint) const
-{
-  if(pasarAminuscSinAcentos) {
-    unsigned char *tmp_buf = new unsigned char[r_bufsize];
-    for(size_t i=0; i < r_bufsize; ++i)
+size_t Tokenizador::tokenize_buffer(const unsigned char *readpoint,
+                                    const size_t r_bufsize,
+                                    unsigned char *writepoint) const {
+  unsigned char *tmp_buf = nullptr;
+  if (pasarAminuscSinAcentos) {
+    tmp_buf = new unsigned char[r_bufsize];
+    for (size_t i = 0; i < r_bufsize; ++i)
       tmp_buf[i] = iso8859_norm_table[readpoint[i]];
     readpoint = tmp_buf;
   }
@@ -305,34 +286,35 @@ size_t Tokenizador::tokenize_buffer(const unsigned char *readpoint, const size_t
   const unsigned char *const inbuf_end = readpoint + r_bufsize;
   const unsigned char *const outbuf_begin = writepoint;
 
-  if(casosEspeciales)
-  {
+  if (casosEspeciales) {
     unsigned char c1, c2;
     unsigned char cmpbuf[6];
     off_t rd_offset, buf_delta;
-    unsigned char *buf_checkpoint;
-    while(readpoint < inbuf_end)
-    {
-      //url_precondition:
-      rd_offset = 0; buf_delta = inbuf_end - readpoint;
-      if(buf_delta < 5) goto delimiter_start_check;
+    unsigned char *buf_checkpoint, *tkinit_buf_checkpoint;
+    bool emaildelim_after_check;
+    while (readpoint < inbuf_end) {
+      // url_precondition:
+      rd_offset = 0;
+      buf_delta = inbuf_end - readpoint;
+      if (buf_delta < 5)
+        goto delimiter_start_check;
       memcpy(cmpbuf, readpoint, (buf_delta < 6 ? buf_delta : 6));
-      if(buf_delta >= 5 && strncmp((const char*)cmpbuf, "http:", 5) == 0)
+      if (buf_delta >= 5 && strncmp((const char *)cmpbuf, "http:", 5) == 0)
         rd_offset = 5;
-      else if(buf_delta >= 6 && strncmp((const char*)cmpbuf, "https:", 6) == 0)
+      else if (buf_delta >= 6 &&
+               strncmp((const char *)cmpbuf, "https:", 6) == 0)
         rd_offset = 6;
-      else if(buf_delta >= 4 && strncmp((const char*)cmpbuf, "ftp:", 4) == 0)
+      else if (buf_delta >= 4 && strncmp((const char *)cmpbuf, "ftp:", 4) == 0)
         rd_offset = 4;
 
-      //url:
-      if(rd_offset > 0) {
+      // url:
+      if (rd_offset > 0) {
         memcpy(writepoint, readpoint, (size_t)rd_offset);
         readpoint += rd_offset;
         writepoint += rd_offset;
-        while(readpoint < inbuf_end)
-        {
+        while (readpoint < inbuf_end) {
           c1 = *readpoint++;
-          if(delimiters[c1] && !Tokenizador::url_delimiters[c1])
+          if (delimiters[c1] && !Tokenizador::url_delimiters[c1])
             break;
           *writepoint++ = c1;
         }
@@ -340,69 +322,95 @@ size_t Tokenizador::tokenize_buffer(const unsigned char *readpoint, const size_t
         continue;
       }
 
-      delimiter_start_check:
-      if(delimiters[(c1 = *readpoint)])
-      {
-        //skip_delimiters:
-        while(readpoint < inbuf_end)
-        {
+    delimiter_start_check:
+      if (delimiters[(c1 = *readpoint)]) {
+        // skip_delimiters:
+        while (readpoint < inbuf_end) {
           c1 = *readpoint++;
-          if(dot_or_comma(c1)) {
-            if(!(readpoint < inbuf_end)) break;
+          if (dot_or_comma(c1)) {
+            if (!(readpoint < inbuf_end))
+              break;
             c2 = *readpoint++;
-            if(is_numeric(c2)) goto decimal_with_delimiter_start;
-            if(delimiters[c2]) continue;
+            if (is_numeric(c2)) {
+              tkinit_buf_checkpoint = writepoint;
+              goto decimal_with_delimiter_start;
+            }
+            if (delimiters[c2]) {
+              --readpoint;
+              continue;
+            }
+            // If c2 is not a delimiter, we start with c1 not being
+            c1 = c2;
             goto no_delimiter_start;
           }
-          if(!delimiters[c1]) goto no_delimiter_start;
+          if (!delimiters[c1])
+            goto no_delimiter_start;
         }
         continue;
 
-        decimal_with_delimiter_start:
+      decimal_with_delimiter_start:
         *writepoint++ = '0';
         *writepoint++ = c1;
         *writepoint++ = c2;
 
-        decimal_number:
+      decimal_number:
         buf_checkpoint = nullptr;
-        while(readpoint < inbuf_end)
-        {
+        while (readpoint < inbuf_end) {
           c1 = *readpoint++;
-          if(is_numeric(c1)) {
+          if (is_numeric(c1)) {
             *writepoint++ = c1;
-          }
-          else if(dot_or_comma(c1)) {
+          } else if (dot_or_comma(c1)) {
             buf_checkpoint = writepoint;
-            if(!(readpoint < inbuf_end)) break;
+            if (!(readpoint < inbuf_end))
+              break;
             c2 = *readpoint++;
-            if(delimiters[c2]) break;
+            if (delimiters[c2])
+              break;
             *writepoint++ = c1;
             *writepoint++ = c2;
-            if(!is_numeric(c2))
+            // If slice starts non numeric
+            if (!is_numeric(c2)) {
+              // Remove initial "0." if exists
+              if (tkinit_buf_checkpoint) {
+                writepoint -= 2;
+                while (tkinit_buf_checkpoint < writepoint) {
+                  *tkinit_buf_checkpoint = *(tkinit_buf_checkpoint + 2);
+                  ++tkinit_buf_checkpoint;
+                }
+              }
               goto _acronym_nodelim_start;
-          }
-          else if(delimiters[c1]) { break; }
-          else /* c1 no delimiter */ goto cleanup_acronym;
+            }
+          } else if (delimiters[c1]) {
+            break;
+          } else /* c1 no delimiter */
+            goto cleanup_acronym;
         }
         *writepoint++ = '\n';
         continue;
 
-        cleanup_acronym:
-        if(buf_checkpoint) *buf_checkpoint = '\n';
+      cleanup_acronym:
+        if (buf_checkpoint)
+          *buf_checkpoint = '\n';
+        *writepoint++ = c1;
         goto _acronym_nodelim_start;
-      }
-      else ++readpoint;
+      } else
+        ++readpoint;
 
-      no_delimiter_start:
+    no_delimiter_start:
       *writepoint++ = c1;
-      if(is_numeric(c1)) goto decimal_number;
-      while(readpoint < inbuf_end)
-      {
+      if (is_numeric(c1) && delimiters['.'] && delimiters[',']) {
+        tkinit_buf_checkpoint = nullptr;
+        goto decimal_number;
+      }
+      while (readpoint < inbuf_end) {
         c1 = *readpoint++;
-        if(delimiters[c1]) {
-          if(c1 == '@') goto email;
-          if(c1 == '.') goto acronym;
-          if(c1 == '-') goto multiword;
+        if (delimiters[c1]) {
+          if (c1 == '@')
+            goto email;
+          if (c1 == '.')
+            goto acronym;
+          if (c1 == '-')
+            goto multiword;
           break;
         }
         *writepoint++ = c1;
@@ -410,87 +418,115 @@ size_t Tokenizador::tokenize_buffer(const unsigned char *readpoint, const size_t
       *writepoint++ = '\n';
       continue;
 
-      email:
+    email:
       buf_checkpoint = writepoint;
-      if(!(readpoint < inbuf_end)) break;
+      if (!(readpoint < inbuf_end))
+        break;
       c2 = *readpoint++;
-      if(delimiters[c2] || email_delimiters[c2]) continue;
+      if (delimiters[c2] || email_delimiters[c2]) {
+        *writepoint++ = '\n';
+        continue;
+      }
       *writepoint++ = c1;
       *writepoint++ = c2;
-      while(readpoint < inbuf_end) {
+      emaildelim_after_check = false;
+      while (readpoint < inbuf_end) {
         c1 = *readpoint++;
-        if(email_delimiters[c1]) { //TODO: what when c1 = mail_delim && c2 = delim or mail_delim, may jump back?
-          if(!(readpoint < inbuf_end)) break;
+        if (email_delimiters[c1]) {
+          if (delimiters[c1] && (c1 == '.' || c1 == '-'))
+            emaildelim_after_check = true;
+          if (!(readpoint < inbuf_end))
+            break;
           c2 = *readpoint++;
-          if(delimiters[c2] || email_delimiters[c2])
+          if (delimiters[c2] || email_delimiters[c2])
             break;
           *writepoint++ = c1;
           *writepoint++ = c2;
           continue;
-        }
-        else if(c1 == '@') {
+        } else if (c1 == '@') {
           *buf_checkpoint = '\n';
-          *writepoint++ = '\n';
+          if ((readpoint - 1) != buf_checkpoint) {
+            if (emaildelim_after_check)
+              break;
+
+            *writepoint++ = c1;
+            continue;
+          }
+          break;
+        } else if (delimiters[c1]) {
           break;
         }
-        else if(delimiters[c1]) { break; }
         *writepoint++ = c1;
       }
       *writepoint++ = '\n';
       continue;
 
-      acronym:
-      if(!(readpoint < inbuf_end)) break;
+    acronym:
+      if (!(readpoint < inbuf_end))
+        break;
       c2 = *readpoint++;
-      if(delimiters[c2]) continue;
+      if (delimiters[c2]) {
+        *writepoint++ = '\n';
+        continue;
+      }
       *writepoint++ = c1;
       *writepoint++ = c2;
-      _acronym_nodelim_start:
-      while(readpoint < inbuf_end) {
+    _acronym_nodelim_start:
+      while (readpoint < inbuf_end) {
         c1 = *readpoint++;
-        if(c1 == '.') {
-          if(!(readpoint < inbuf_end)) break;
+        if (c1 == '.') {
+          if (!(readpoint < inbuf_end))
+            break;
           c2 = *readpoint++;
-          if(delimiters[c2]) break;
+          if (delimiters[c2])
+            break;
           *writepoint++ = c1;
           *writepoint++ = c2;
           continue;
-        }
+        } else if (delimiters[c1])
+          break;
+
         *writepoint++ = c1;
       }
       *writepoint++ = '\n';
       continue;
 
-      multiword:
-      if(!(readpoint < inbuf_end)) break;
+    multiword:
+      if (!(readpoint < inbuf_end))
+        break;
       c2 = *readpoint++;
-      if(delimiters[c2]) continue;
+      if (delimiters[c2]) {
+        *writepoint++ = '\n';
+        continue;
+      }
       *writepoint++ = c1;
       *writepoint++ = c2;
-      while(readpoint < inbuf_end) {
+      while (readpoint < inbuf_end) {
         c1 = *readpoint++;
-        if(c1 == '-') {
-          if(!(readpoint < inbuf_end)) break;
+        if (c1 == '-') {
+          if (!(readpoint < inbuf_end))
+            break;
           c2 = *readpoint++;
-          if(delimiters[c2]) break;
+          if (delimiters[c2])
+            break;
           *writepoint++ = c1;
           *writepoint++ = c2;
           continue;
-        }
+        } else if (delimiters[c1])
+          break;
+
         *writepoint++ = c1;
       }
       *writepoint++ = '\n';
       continue;
     }
-  }
-  else // no special
+  } else // no special
   {
     bool got_char = false;
-    while(readpoint < inbuf_end)
-    {
-      if(delimiters[*readpoint]) {
+    while (readpoint < inbuf_end) {
+      if (delimiters[*readpoint]) {
         ++readpoint;
-        if(got_char) {
+        if (got_char) {
           got_char = false;
           *writepoint++ = '\n';
         }
@@ -499,29 +535,28 @@ size_t Tokenizador::tokenize_buffer(const unsigned char *readpoint, const size_t
       got_char = true;
       *writepoint++ = *readpoint++;
     }
-    if(!got_char) *writepoint++ = '\n';
+    if (!got_char)
+      *writepoint++ = '\n';
   }
 
-  if(pasarAminuscSinAcentos) {
-    delete[] readpoint;
+  if (pasarAminuscSinAcentos) {
+    delete[] tmp_buf;
   }
   return writepoint - outbuf_begin; // written bytes
 }
 
-
 bool Tokenizador::special_delimiters_done = false;
 
-void Tokenizador::initialize_special_delimiters()
-{
+void Tokenizador::initialize_special_delimiters() {
   static const unsigned char raw_url_delim[] = "_:/.?&-=#@";
   static const unsigned char raw_email_delim[] = ".-_";
-  size_t N = sizeof(raw_url_delim) -1;
+  size_t N = sizeof(raw_url_delim) - 1;
 
-  for(size_t i = 0; i < N; ++i)
+  for (size_t i = 0; i < N; ++i)
     Tokenizador::url_delimiters.set(raw_url_delim[i]);
 
-  N = sizeof(raw_email_delim) -1;
-  for(size_t i=0; i < N; ++i)
+  N = sizeof(raw_email_delim) - 1;
+  for (size_t i = 0; i < N; ++i)
     Tokenizador::email_delimiters.set(raw_email_delim[i]);
 
   special_delimiters_done = true;
