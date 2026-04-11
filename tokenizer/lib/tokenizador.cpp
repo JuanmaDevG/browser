@@ -18,6 +18,8 @@ const unsigned char Tokenizador::iso8859_norm_table[256];
 ostream &operator<<(ostream &os, const Tokenizador &tk) {
   cout << "DELIMITADORES: ";
   for (size_t i = 0; i < ISO_8859_SIZE; ++i) {
+    if (i == (size_t)'\n')
+      continue;
     if (tk.delimiters[i])
       cout << (char)i;
   }
@@ -312,6 +314,18 @@ size_t Tokenizador::tokenize_buffer(const unsigned char *readpoint,
         memcpy(writepoint, readpoint, (size_t)rd_offset);
         readpoint += rd_offset;
         writepoint += rd_offset;
+        if (!(readpoint < inbuf_end)) {
+          if (delimiters[':']) {
+            *(writepoint - 1) = '\n';
+          }
+          continue;
+        }
+        c1 = *readpoint;
+        if ((delimiters[c1] && !Tokenizador::url_delimiters[c1]) ||
+            (c1 == '\0' && delimiters[':'])) {
+          *(writepoint - 1) = '\n';
+          continue;
+        }
         while (readpoint < inbuf_end) {
           c1 = *readpoint++;
           if (delimiters[c1] && !Tokenizador::url_delimiters[c1])
@@ -360,10 +374,17 @@ size_t Tokenizador::tokenize_buffer(const unsigned char *readpoint,
           if (is_numeric(c1)) {
             *writepoint++ = c1;
           } else if (dot_or_comma(c1)) {
-            buf_checkpoint = writepoint;
+            if (c1 == ',') {
+              buf_checkpoint = writepoint;
+            }
             if (!(readpoint < inbuf_end))
               break;
-            c2 = *readpoint++;
+            c2 = *readpoint;
+            if (dot_or_comma(c2)) {
+              *writepoint++ = '\n';
+              goto delimiter_start_check;
+            }
+            ++readpoint;
             if (delimiters[c2])
               break;
             *writepoint++ = c1;
