@@ -1,964 +1,584 @@
 #include "tokenizador.h"
 
-#include <sys/mman.h>
-#include <fcntl.h>
-#include <sys/stat.h>
-#include <unistd.h>
-#include <sys/types.h>
-#include <dirent.h>
 #include <cstring>
-
-
-ostream& operator<<(ostream& os, const Fecha& f)
-{
-  os << f.tm_mday << '/' << (f.tm_mon +1) << '/' << f.tm_year << ' ' << f.tm_hour << ':' << f.tm_min << ':' << f.tm_sec;
-  return os;
-}
-
-
-file_loader::file_loader()
-{
-  null_readpoints();
-  null_writepoints();
-}
-
-
-bool file_loader::begin(const char* filename, const char* output_filename = nullptr)
-{
-  if(!filename) goto no_input_file;
-  inbuf_fd = open(filename, O_RDONLY);
-  struct stat in_fileinfo;
-  if(inbuf_fd < 0)
-    return false;
-
-  fstat(inbuf_fd, &in_fileinfo);
-  inbuf = (char*)mmap(nullptr, in_fileinfo.st_size, PROT_READ | PROT_WRITE, MAP_PRIVATE, inbuf_fd, 0);
-  inbuf_size = in_fileinfo.st_size;
-  readpoint = inbuf;
-  frontpoint = inbuf;
-  inbuf_end = inbuf + inbuf_size;
-
-  no_input_file:
-  if(!output_filename) return true;
-  outbuf_fd = open(output_filename, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR);
-  if(outbuf_fd < 0)
-  {
-    munmap(const_cast<char*>(inbuf), in_fileinfo.st_size);
-    null_readpoints();
-    return false;
-  }
-  ftruncate(outbuf_fd, in_fileinfo.st_size);
-  outbuf = (char*)mmap(nullptr, in_fileinfo.st_size, PROT_WRITE, MAP_SHARED, outbuf_fd, 0);
-  if(outbuf == MAP_FAILED)
-  {
-    close(inbuf_fd);
-    close(outbuf_fd);
-    munmap(const_cast<char*>(inbuf), inbuf_size);
-    null_readpoints();
-    null_writepoints();
-    return false;
-  }
-  outbuf_size = in_fileinfo.st_size;
-  outbuf_end = outbuf + outbuf_size;
-  writepoint = outbuf;
-
-  return true;
-}
-
-
-void file_loader::terminate()
-{
-  if(!inbuf) goto no_inbuf;
-  munmap(const_cast<char*>(inbuf), inbuf_size);
-  close(inbuf_fd);
-
-  no_inbuf:
-  if(outbuf) {
-    munmap(outbuf, outbuf_size);
-    if(writepoint < outbuf_end)  // Adjust filesize
-    {
-      ftruncate(outbuf_fd, outbuf_size - (outbuf_end - writepoint));
-    }
-    close(outbuf_fd);
-  }
-
-  null_readpoints();
-  null_writepoints();
-}
-
-
-extern inline void file_loader::null_readpoints()
-{
-  inbuf = nullptr;
-  inbuf_end = nullptr;
-  inbuf_size = 0;
-  readpoint = nullptr;
-  frontpoint = nullptr;
-  inbuf_fd = 0;
-}
-
-
-extern inline void file_loader::null_writepoints()
-{
-  outbuf = nullptr;
-  outbuf_end = nullptr;
-  outbuf_size = 0;
-  writepoint = nullptr;
-  outbuf_fd = 0;
-}
-
-
-bool file_loader::resize_outfile(const size_t sz)
-{
-  if(!outbuf) return false;
-  off_t checkpoint = writepoint - outbuf;
-  if(ftruncate(outbuf_fd, sz) < 0) return false;
-  outbuf = (char*)mremap(outbuf, outbuf_size, sz, MREMAP_MAYMOVE);
-  if(outbuf == MAP_FAILED)
-  {
-    close(outbuf_fd);
-    null_writepoints();
-    return false;
-  }
-  outbuf_size = sz;
-  writepoint = outbuf + checkpoint;
-  outbuf_end = outbuf + sz;
-
-  return true;
-}
-
-
-pair<const char*, const char*> file_loader::getline()
-{
-  if(frontpoint >= inbuf_end) return {nullptr, nullptr};
-  if(*frontpoint == '\n') ++frontpoint;
-  readpoint = frontpoint;
-
-  frontpoint = (const char*)memchr(readpoint, '\n', inbuf_size - (readpoint - inbuf));
-  if(!frontpoint)
-    frontpoint = inbuf + inbuf_size;
-
-  return {readpoint, frontpoint};
-}
-
-
-bool file_loader::write(const void* buf, const size_t sz)
-{
-  if(outbuf_end - writepoint < sz)
-  {
-    if(!resize_outfile(writepoint - outbuf + sz))
-      return false;
-  }
-  memcpy(writepoint, buf, sz);
-  writepoint += sz;
-  return true;
-}
-
-
-bool file_loader::put(const char c)
-{
-  if(writepoint >= outbuf_end)
-    if(!resize_outfile(outbuf_size + 256))
-      return false;
-  *writepoint = c;
-  ++writepoint;
-  return true;
-}
-
-
-Fecha file_loader::get_mod_date() const
-{
-  struct stat inbuf_metadata;
-  fstat(inbuf_fd, &inbuf_metadata);
-  return *localtime(&inbuf_metadata.st_mtime);
-}
-
-
-void file_loader::mem_begin(const char* rdbuf, const size_t rdbuf_sz)
-{
-  inbuf = rdbuf;
-  inbuf_end = inbuf + rdbuf_sz;
-  inbuf_size = rdbuf_sz;
-  readpoint = inbuf;
-  frontpoint = inbuf;
-  inbuf_fd = 0;
-}
-
-
-void file_loader::mem_terminate()
-{
-  null_readpoints();
-}
-
-
-Fecha file_loader::get_mod_date(const char* filename)
-{
-  int fd = open(filename, O_RDONLY);
-  if(fd < 0) return {0, 0, 0, 0, 0, 0, 0, 0, 0};
-  struct stat file_stat;
-  fstat(fd, &file_stat);
-  close(fd);
-  return *localtime(&file_stat.st_mtime);
-}
-
-
-int file_loader::get_size(const char* filename)
-{
-  int fd = open(filename, O_RDONLY);
-  if(fd < 0) return 0;
-  struct stat file_stat;
-  fstat(fd, &file_stat);
-  close(fd);
-  return file_stat.st_size;
-}
-
-
-bool file_loader::exists(const char* filename)
-{
-  int fd = open(filename, O_RDONLY);
-  close(fd);
-  return fd != -1;
-}
-
-
-void memory_pool::reset()
-{
-  if(buf != data)
-  {
-    delete[] buf;
-    buf = data;
-    bufsize = MEM_POOL_SIZE;
-    buf_end = buf + MEM_POOL_SIZE;
-  }
-  writepoint = buf;
-}
-
-
-bool memory_pool::resize(const size_t sz)
-{
-  if(sz <= bufsize)
-  {
-    buf_end -= bufsize - sz;
-    bufsize = sz;
-    if(writepoint > buf_end)
-      writepoint = buf_end;
-    return true;
-  }
-
-  off_t written_bytes = writepoint - buf;
-  char* newbuf = new char[sz];
-  if(!newbuf) return false;
-  memcpy(newbuf, buf, written_bytes);
-  if(buf != data)
-    delete[] buf;
-  buf = newbuf;
-  buf_end = buf + sz;
-  bufsize = sz;
-  writepoint = buf + written_bytes;
-  return true;
-}
-
-
-bool memory_pool::write(const void* rdbuf, const size_t sz)
-{
-  if(buf_end - writepoint < sz)
-    if(!this->resize(writepoint - buf + sz))
-      return false;
-
-  memcpy(writepoint, rdbuf, sz);
-  writepoint += sz;
-  return true;
-}
-
-
-bool memory_pool::put(const char c)
-{
-  if(writepoint >= buf_end)
-    if(!this->resize(bufsize + 256))
-      return false;
-  *writepoint = c;
-  ++writepoint;
-  return true;
-}
-
-
-//TODO: substitute by bitset operations
-extern inline bool iso_8859_1_bitvec::check(const uint8_t delim_idx) const
-{
-  return static_cast<bool>((this->data[delim_idx >> 3] >> (delim_idx & 0b111)) & 1);
-}
-
-
-void iso_8859_1_bitvec::set(const uint8_t delim_idx, const bool val)
-{
-  if(val)
-    this->data[delim_idx >> 3] = this->data[delim_idx >> 3] | (1 << (static_cast<uint8_t>(delim_idx) & 0b111));
-  else
-    this->data[delim_idx >> 3] = this->data[delim_idx >> 3] & (0xff - (1 << (static_cast<uint8_t>(delim_idx) & 0b111)));
-}
-
-
-void iso_8859_1_bitvec::reset()
-{
-  memset(data, 0, DELIMITER_BIT_VEC_SIZE);
-}
-
-
-void iso_8859_1_bitvec::copy_from(const iso_8859_1_bitvec& delim)
-{
-  memcpy(this->data, delim.data, DELIMITER_BIT_VEC_SIZE);
-}
-
-
-void iso_8859_1_bitvec::copy_from(const string& delim_str)
-{
-  for(auto reader = delim_str.cbegin(); reader != delim_str.cend(); reader++)
-    this->set(*reader, true);
-}
-
-
-void iso_8859_1_bitvec::copy_to(iso_8859_1_bitvec& dst) const
-{
-  memcpy(dst.data, this->data, DELIMITER_BIT_VEC_SIZE);
-}
-
-
-ostream& operator<<(ostream& os, const Tokenizador& tk)
-{
+#include <dirent.h>
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <unistd.h>
+
+#define is_numeric(n) (n >= NUMERIC_START_POINT && n <= NUMERIC_END_POINT)
+#define dot_or_comma(c) (c == '.' || c == ',')
+
+bitset<ISO_8859_SIZE> Tokenizador::url_delimiters;
+bitset<ISO_8859_SIZE> Tokenizador::email_delimiters;
+const unsigned char Tokenizador::iso8859_norm_table[256];
+
+ostream &operator<<(ostream &os, const Tokenizador &tk) {
   cout << "DELIMITADORES: ";
-  for(uint8_t i=0;; ++i)
-  {
-    if(tk.delimiters.check(i))
-    {
+  for (size_t i = 0; i < ISO_8859_SIZE; ++i) {
+    if (i == (size_t)'\n')
+      continue;
+    if (tk.delimiters[i])
       cout << (char)i;
-      /*
-      switch((char)i)
-      {
-        case '\n':
-          cout << "\\n";
-          break;
-        case '\t':
-          cout << "\\t";
-          break;
-        case '\\':
-          cout << "\\";
-          break;
-        default:
-          cout << (char)i;
-      }
-      */
-    }
-
-    if(i == ISO_8859_SIZE -1)
-      break;
   }
 
-  cout << " TRATA DE CASOS ESPECIALES: " << tk.casosEspeciales 
-    << " PASAR A MINUSCULAS Y SIN ACENTOS: " << tk.pasarAminuscSinAcentos
-    << flush;
+  cout << " TRATA DE CASOS ESPECIALES: " << tk.casosEspeciales
+       << " PASAR A MINUSCULAS Y SIN ACENTOS: " << tk.pasarAminuscSinAcentos
+       << flush;
 
   return os;
 }
 
-
-Tokenizador::Tokenizador(const string& delimitadoresPalabra, const bool casosEspeciales, const bool minuscSinAcentos) :
-  casosEspeciales(casosEspeciales), pasarAminuscSinAcentos(minuscSinAcentos), loader()
-{
-  constructionLogic();
-  delimiters.copy_from(delimitadoresPalabra);
+Tokenizador::Tokenizador(const string &delimitadoresPalabra,
+                         const bool casosEspeciales,
+                         const bool minuscSinAcentos)
+    : casosEspeciales(casosEspeciales),
+      pasarAminuscSinAcentos(minuscSinAcentos), delimiters() {
+  default_delimiters();
+  add_delimiters(
+      reinterpret_cast<const unsigned char *>(delimitadoresPalabra.data()),
+      delimitadoresPalabra.size());
 }
 
+Tokenizador::Tokenizador(const Tokenizador &tk)
+    : casosEspeciales(tk.casosEspeciales),
+      pasarAminuscSinAcentos(tk.pasarAminuscSinAcentos),
+      delimiters(tk.delimiters) {}
 
-Tokenizador::Tokenizador(const Tokenizador& tk) : casosEspeciales(tk.casosEspeciales), pasarAminuscSinAcentos(tk.pasarAminuscSinAcentos), loader()
-{
-  constructionLogic();
-  delimiters.copy_from(tk.delimiters);
+Tokenizador::Tokenizador()
+    : casosEspeciales(true), pasarAminuscSinAcentos(false), delimiters() {
+  default_delimiters();
+  static const unsigned char auto_delimiters[] =
+      ",;:.-/+*\\ '\"{}[]()<>¡!¿?&#=\t@";
+  add_delimiters(auto_delimiters, sizeof(auto_delimiters) - 1);
 }
 
+Tokenizador::~Tokenizador() {}
 
-Tokenizador::Tokenizador() : casosEspeciales(true), pasarAminuscSinAcentos(false), loader()
-{
-  static const char* delimDefaults = ",;:.-/+*\\ '\"{}[]()<>¡!¿?&#=\t@";
-  const char* i = delimDefaults;
-  constructionLogic();
-  while(*i != '\0')
-  {
-    delimiters.set(*i, true);
-    ++i;
-  }
-}
-
-
-Tokenizador::~Tokenizador()
-{
-  delimiters.reset();
-  loader.terminate();
-}
-
-
-Tokenizador& Tokenizador::operator=(const Tokenizador& tk)
-{
+Tokenizador &Tokenizador::operator=(const Tokenizador &tk) {
   casosEspeciales = tk.casosEspeciales;
   pasarAminuscSinAcentos = tk.pasarAminuscSinAcentos;
-  delimiters.copy_from(tk.delimiters);
-  loader.terminate();
+  delimiters = tk.delimiters;
   return *this;
 }
 
-
-void Tokenizador::Tokenizar(const string& str, list<string>& tokens)
-{
+void Tokenizador::Tokenizar(const string &str, list<string> &tokens) {
   tokens.clear();
-  string str_copy(str);
-  if(pasarAminuscSinAcentos)
-  {
-    for(auto i = str_copy.begin(); i != str_copy.end(); i++)
-      *i = normalizeChar(*i);
+  const size_t inbuf_size = str.size();
+  const unsigned char *const inbuf = (const unsigned char *)str.data();
+  unsigned char *const outbuf =
+      new unsigned char[inbuf_size +
+                        (inbuf_size >> 1)]; // outbut_size = inbuf_size * 1.5
+
+  const size_t written_bytes = tokenize_buffer(inbuf, inbuf_size, outbuf);
+
+  const unsigned char *const outbuf_end = outbuf + written_bytes;
+  const unsigned char *tbegin = outbuf, *tend = outbuf;
+  while (tbegin < outbuf_end) {
+    while (*tend != '\n' && tend < outbuf_end)
+      ++tend;
+    tokens.emplace_back(tbegin, tend);
+    ++tend;
+    tbegin = tend;
   }
-  loader.mem_begin(str_copy.c_str(), str_copy.length());
-  pair<const char*, const char*> tk;
+  delete[] outbuf;
+}
 
-  while(loader.frontpoint < loader.inbuf_end)
-  {
-    tk = (this->*extractToken)();
-    if(tk.first != nullptr)
-    {
-      tokens.emplace_back(tk.first, tk.second);
-      if(*loader.readpoint == ',' || *loader.readpoint == '.')
-      {
-        tokens.back() = string(1, '0') + tokens.back();
-      }
-    }
+bool Tokenizador::Tokenizar(const string &i, const string &f) {
+  int i_fd = open(i.c_str(), O_RDONLY);
+  if (i_fd < 0) {
+    cerr << "No se ha encontrado el fichero: " << i << endl;
+    return false;
   }
-  loader.mem_terminate();
-}
-
-
-bool Tokenizador::Tokenizar(const string& i, const string& f)
-{
-  return tkFile(i.c_str(), f.c_str());
-}
-
-
-bool Tokenizador::TokenizarListaFicheros(const string& i)
-{
-  file_loader fl;
-
-  if(!fl.begin(i.c_str())) return false;
-  string cur_file;
-  auto line = fl.getline();
-  while(line.first)
-  {
-    cur_file = string(line.first, line.second);
-    Tokenizar(cur_file, cur_file + ".tk");
-    line = fl.getline();
-  }
-
-  fl.terminate();
-  return true;
-}
-
-
-bool Tokenizador::TokenizarDirectorio(const string& dirAIndexar)
-{
-  return tkDirectory(dirAIndexar.c_str(), dirAIndexar.length());
-}
-
-
-void Tokenizador::DelimitadoresPalabra(const string& nuevoDelimiters)
-{
-  defaultDelimiters();
-  delimiters.copy_from(nuevoDelimiters);
-} 
-
-
-void Tokenizador::AnyadirDelimitadoresPalabra(const string& nuevoDelimiters)
-{
-  delimiters.copy_from(nuevoDelimiters);
-}
-
-
-string Tokenizador::DelimitadoresPalabra() const
-{
-  string result;
-  result.reserve(ISO_8859_SIZE);
-  for(uint8_t i=0; i < ISO_8859_SIZE -1; ++i)
-  {
-    if(delimiters.check(static_cast<char>(i)))
-      result.push_back(static_cast<char>(i));
-  }
-
-  return result;
-} 
-
-
-void Tokenizador::CasosEspeciales(const bool nuevoCasosEspeciales)
-{
-  casosEspeciales = nuevoCasosEspeciales;
-  extractToken = (casosEspeciales ? &Tokenizador::extractSpecialCaseToken : &Tokenizador::extractCommonCaseToken);
-  specialDelimiters();
-}
-
-
-bool Tokenizador::CasosEspeciales() const
-{
-  return casosEspeciales;
-}
-
-
-void Tokenizador::PasarAminuscSinAcentos(const bool nuevoPasarAminuscSinAcentos)
-{
-  pasarAminuscSinAcentos = nuevoPasarAminuscSinAcentos;
-}
-
-
-bool Tokenizador::PasarAminuscSinAcentos() const
-{
-  return pasarAminuscSinAcentos;
-}
-
-
-char Tokenizador::normalizeChar(const char c)
-{
-  int16_t curChar = (int16_t)(uint8_t)c;
-  if(curChar >= CAPITAL_START_POINT && curChar <= CAPITAL_END_POINT)
-    curChar += Tokenizador::TOLOWER_OFFSET;
-  else if(curChar - ACCENT_START_POINT >= 0)
-    curChar += Tokenizador::accentRemovalOffsetVec[curChar - ACCENT_START_POINT];
-
-  return (char)curChar;
-}
-
-
-void Tokenizador::skipDelimiters(const bool leaveLastOne)
-{
-  if(!delimiters.check(*loader.frontpoint)) return;
-  while(loader.frontpoint < loader.inbuf_end && delimiters.check(*loader.frontpoint))
-    ++loader.frontpoint;
-
-  if(leaveLastOne)
-    --loader.frontpoint;
-  loader.readpoint = loader.frontpoint;
-}
-
-
-bool Tokenizador::isNumeric(const char c) const
-{
-  return static_cast<uint8_t>(c) >= Tokenizador::NUMERIC_START_POINT && static_cast<uint8_t>(c) <= Tokenizador::NUMERIC_END_POINT;
-}
-
-
-bool Tokenizador::tkFile(const char* ifile, const char* ofile)
-{
-  if(!loader.begin(ifile, ofile))
-  {
-    cerr << "ERROR: No existe el archivo: " << ifile << endl;
+  int o_fd = open(f.c_str(), O_RDWR | O_CREAT, S_IRUSR | S_IWUSR);
+  if (o_fd < 0) {
+    cerr << "No se pudo crear el fichero: " << f << endl;
     return false;
   }
 
-  if(pasarAminuscSinAcentos)
-  {
-    for(char* i = const_cast<char*>(loader.inbuf); i < loader.inbuf_end; ++i)
-      *i = normalizeChar(*i);
+  struct stat fileinfo;
+  fstat(i_fd, &fileinfo);
+  const unsigned char *const inbuf = (const unsigned char *)mmap(
+      nullptr, fileinfo.st_size, PROT_READ, MAP_SHARED, i_fd, 0);
+  close(i_fd);
+  if (inbuf == MAP_FAILED) {
+    cerr << "No se ha podido mapear el fichero de entrada: " << i << endl;
+    return false;
   }
-  pair<const char*, const char*> tk;
+  madvise(const_cast<unsigned char *>(inbuf), fileinfo.st_size,
+          MADV_SEQUENTIAL | MADV_WILLNEED);
 
-  while(loader.frontpoint < loader.inbuf_end)
-  {
-    tk = (this->*extractToken)();
-    loader.write(tk.first, tk.second - tk.first);
-    loader.put('\n');
+  ftruncate(o_fd,
+            (off_t)fileinfo.st_size +
+                (fileinfo.st_size >> 1)); // outbuf_size = inbuf_size * 1.5
+  unsigned char *const outbuf =
+      (unsigned char *)mmap(nullptr, fileinfo.st_size + (fileinfo.st_size >> 1),
+                            PROT_WRITE, MAP_SHARED, o_fd, 0);
+  if (outbuf == MAP_FAILED) {
+    cerr << "No se pudo mapear el fichero de salida: " << f << endl;
+    close(o_fd);
+    return false;
   }
+  madvise(outbuf, fileinfo.st_size, MADV_SEQUENTIAL);
 
-  loader.terminate();
+  const size_t written_bytes = tokenize_buffer(inbuf, fileinfo.st_size, outbuf);
+
+  munmap(const_cast<unsigned char *>(inbuf), fileinfo.st_size);
+  msync(outbuf, fileinfo.st_size, MS_ASYNC);
+  munmap(outbuf, fileinfo.st_size);
+  ftruncate(o_fd, written_bytes);
+  close(o_fd);
   return true;
 }
 
+bool Tokenizador::TokenizarListaFicheros(const string &i) {
+  int r_fd = open(i.c_str(), O_RDONLY);
+  if (r_fd < 0)
+    return false;
+  struct stat r_info;
+  fstat(r_fd, &r_info);
+  const unsigned char *const rbuf = (const unsigned char *)mmap(
+      nullptr, r_info.st_size, PROT_READ, MAP_SHARED, r_fd, 0);
+  close(r_fd);
+  if (rbuf == MAP_FAILED)
+    return false;
+  madvise(const_cast<unsigned char *>(rbuf), r_info.st_size, MADV_SEQUENTIAL);
+  const unsigned char *const rbuf_end = rbuf + r_info.st_size;
+  string inpath, outpath;
 
-bool Tokenizador::tkDirectory(const char* dir_name, const size_t dir_len)
-{
-  DIR* dir;
-  struct dirent* entry;
-  char* entry_name = new char[512];
-  size_t entry_len = 256;
-  if(!entry_name) return false;
+  const unsigned char *backpoint = rbuf, *frontpoint = rbuf;
+  while (backpoint < rbuf_end) {
+    while (backpoint < rbuf_end && *frontpoint != '\n')
+      ++frontpoint;
+    inpath.assign(backpoint, frontpoint);
+    outpath.assign(backpoint, frontpoint).append(".tk");
+    ++frontpoint;
+    backpoint = frontpoint;
+    Tokenizar(inpath, outpath);
+  }
 
-  if((dir = opendir(dir_name)) == nullptr)
-  {
-    cerr << "ERROR: El directorio " << dir_name << " no existe o el usuario no tiene permiso de acceder." << endl;
-    delete[] entry_name;
+  munmap(const_cast<unsigned char *>(rbuf), r_info.st_size);
+  return true;
+}
+
+bool Tokenizador::TokenizarDirectorio(const string &dirAIndexar) {
+  size_t dir_len = dirAIndexar.size();
+  const char *const dir_name = dirAIndexar.c_str();
+  DIR *dir = opendir(dir_name);
+  if (!dir) {
+    cerr << "No se ha encontrado el directorio: " << dirAIndexar << endl;
     return false;
   }
 
-  size_t entry_namlen;
-  while((entry = readdir(dir)) != nullptr)
-  {
-    entry_namlen = strlen(entry->d_name);
-    if(
-        (entry->d_name[0] == '.' && (entry->d_name[1] == '\0' || (entry->d_name[1] == '.')))
-        || (entry_namlen > 2 && entry->d_name[entry_namlen -3] == '.' && entry->d_name[entry_namlen -2] == 't' && entry->d_name[entry_namlen -1] == 'k'))
-    {
+  char path_buf[8192];
+  memcpy(path_buf, dir_name, dir_len);
+  if (path_buf[dir_len - 1] != '/')
+    path_buf[dir_len] = '/';
+
+  dirent *entry;
+  while ((entry = readdir(dir))) {
+    const char *dname = entry->d_name;
+    if (dname[0] == '.' && (!dname[1] || (dname[1] == '.' && !dname[2])))
       continue;
-    }
 
-    // +2 = '/' + '\0'
-    if(dir_len + entry_namlen +2 > entry_len)
-    {
-      delete[] entry_name;
-      entry_len = dir_len + entry_namlen +2;
-      // << 1 = outfile, +3 = ".tk"
-      entry_name = new char[(entry_len << 1) +3];
-    }
-    memcpy(entry_name, dir_name, dir_len);
-    *(entry_name + dir_len) = '/';
-    memcpy(entry_name + dir_len +1, entry->d_name, entry_namlen);
-    *(entry_name + dir_len + 1 + entry_namlen) = '\0';
+    size_t nlen = strlen(dname);
+    // if (dir_len + nlen >= 4094) continue;
+    if (strncmp(dname + nlen - 3, ".tk", 3) == 0)
+      continue;
+    memcpy(path_buf + dir_len + 1, dname, nlen + 1);
 
-    if(entry->d_type == DT_DIR)
-    {
-      tkDirectory(entry_name, dir_len + entry_namlen +1);
-    }
-    else
-    {
-      memcpy(entry_name + entry_len, entry_name, dir_len + entry_namlen +1);
-      memcpy(entry_name + entry_len + dir_len + entry_namlen +1, ".tk", 4);
-      tkFile(entry_name, entry_name + entry_len);
+    if (entry->d_type == DT_DIR) {
+      TokenizarDirectorio(string(path_buf, dir_len + nlen + 1));
+    } else {
+      char *out = path_buf + 4096;
+      memcpy(out, path_buf, dir_len + nlen + 2);
+      memcpy(out + dir_len + nlen + 1, ".tk", 4);
+      Tokenizar(path_buf, out);
     }
   }
-  delete[] entry_name;
+
   closedir(dir);
   return true;
 }
 
-
-bool Tokenizador::tkAppend(const string& filename, vector<string>& tokens)
-{
-  if(!loader.begin(filename.c_str()))
-  {
-    cerr << "ERROR: no existe el fichero "  << filename << " que se desea tokenizar.";
-    return false;
-  }
-  tokens.reserve(tokens.size() + (loader.inbuf_size >> 3));
-  if(pasarAminuscSinAcentos)
-  {
-    char* i = const_cast<char*>(loader.inbuf);
-    while(i < loader.inbuf_end)
-    {
-      *i = normalizeChar(*i);
-      ++i;
-    }
-  }
-
-  pair<const char*, const char*> tk;
-  while(loader.frontpoint < loader.inbuf_end)
-  {
-    tk = (this->*extractToken)();
-    if(tk.first)
-    {
-      tokens.emplace_back(tk.first, tk.second);
-      if(*loader.readpoint == ',' || *loader.readpoint == '.')
-        tokens.back() = string(1, '0') + tokens.back();
-    }
-  }
-  loader.terminate();
-  return true;
+void Tokenizador::DelimitadoresPalabra(const string &nuevoDelimiters) {
+  delimiters.reset();
+  default_delimiters();
+  add_delimiters(
+      reinterpret_cast<const unsigned char *>(nuevoDelimiters.data()),
+      nuevoDelimiters.size());
 }
 
+void Tokenizador::AnyadirDelimitadoresPalabra(const string &nuevoDelimiters) {
+  add_delimiters(
+      reinterpret_cast<const unsigned char *>(nuevoDelimiters.data()),
+      nuevoDelimiters.size());
+}
 
-bool Tokenizador::tkDirAppend(const string& dir_name, vector<string>& tokens)
-{
-  DIR* dir;
-  struct dirent* entry;
-  string entry_name;
+string Tokenizador::DelimitadoresPalabra() const {
+  string result;
+  result.reserve(delimiters.count() + 1);
 
-  if((dir = opendir(dir_name.c_str())) == nullptr)
-  {
-    cerr << "ERROR: no se ha podido abrir el directorio " << dir_name << " porque no existe." << endl;
-    return false;
+  for (size_t i = 0; i < ISO_8859_SIZE - 1; ++i)
+    if (delimiters[i])
+      result.push_back((char)i);
+
+  return result;
+}
+
+void Tokenizador::CasosEspeciales(const bool nuevoCasosEspeciales) {
+  casosEspeciales = nuevoCasosEspeciales;
+  if (casosEspeciales)
+    delimiters.set((size_t)' ');
+  else
+    delimiters.reset((size_t)' ');
+}
+
+bool Tokenizador::CasosEspeciales() const { return casosEspeciales; }
+
+void Tokenizador::PasarAminuscSinAcentos(
+    const bool nuevoPasarAminuscSinAcentos) {
+  pasarAminuscSinAcentos = nuevoPasarAminuscSinAcentos;
+}
+
+bool Tokenizador::PasarAminuscSinAcentos() const {
+  return pasarAminuscSinAcentos;
+}
+
+extern inline void Tokenizador::default_delimiters() {
+  delimiters.set((size_t)'\0');
+  delimiters.set((size_t)'\n');
+  delimiters.set((size_t)'\r');
+  if (casosEspeciales)
+    delimiters.set((size_t)' ');
+
+  // Static delimiters for special cases
+  if (!Tokenizador::special_delimiters_done)
+    Tokenizador::initialize_special_delimiters();
+}
+
+extern inline void Tokenizador::add_delimiters(const unsigned char *delim,
+                                               const size_t n) {
+  for (size_t i = 0; i < n; ++i)
+    delimiters.set((size_t)delim[i]);
+}
+
+extern inline void
+Tokenizador::normalize(unsigned char *buf,
+                       const unsigned char *const buf_end) const {
+  while (buf < buf_end) {
+    *buf = iso8859_norm_table[*buf];
+    ++buf;
+  }
+}
+
+size_t Tokenizador::tokenize_buffer(const unsigned char *readpoint,
+                                    const size_t r_bufsize,
+                                    unsigned char *writepoint) const {
+  unsigned char *tmp_buf = nullptr;
+  if (pasarAminuscSinAcentos) {
+    tmp_buf = new unsigned char[r_bufsize];
+    for (size_t i = 0; i < r_bufsize; ++i)
+      tmp_buf[i] = iso8859_norm_table[readpoint[i]];
+    readpoint = tmp_buf;
   }
 
-  while((entry = readdir(dir)) != nullptr)
-  {
-    entry_name = entry->d_name;
-    if(entry_name == "." || entry_name == ".." || entry_name.find(".tk", entry_name.length() - 3, 3))
+  const unsigned char *const inbuf_end = readpoint + r_bufsize;
+  const unsigned char *const outbuf_begin = writepoint;
+
+  if (casosEspeciales) {
+    unsigned char c1, c2;
+    unsigned char cmpbuf[6];
+    off_t rd_offset, buf_delta;
+    unsigned char *buf_checkpoint, *tkinit_buf_checkpoint;
+    bool emaildelim_after_check;
+    while (readpoint < inbuf_end) {
+      // url_precondition:
+      rd_offset = 0;
+      buf_delta = inbuf_end - readpoint;
+      if (buf_delta < 5)
+        goto delimiter_start_check;
+      memcpy(cmpbuf, readpoint, (buf_delta < 6 ? buf_delta : 6));
+      if (buf_delta >= 5 && strncmp((const char *)cmpbuf, "http:", 5) == 0)
+        rd_offset = 5;
+      else if (buf_delta >= 6 &&
+               strncmp((const char *)cmpbuf, "https:", 6) == 0)
+        rd_offset = 6;
+      else if (buf_delta >= 4 && strncmp((const char *)cmpbuf, "ftp:", 4) == 0)
+        rd_offset = 4;
+
+      // url:
+      if (rd_offset > 0) {
+        memcpy(writepoint, readpoint, (size_t)rd_offset);
+        readpoint += rd_offset;
+        writepoint += rd_offset;
+        if (!(readpoint < inbuf_end)) {
+          if (delimiters[':']) {
+            *(writepoint - 1) = '\n';
+          }
+          continue;
+        }
+        c1 = *readpoint;
+        if ((delimiters[c1] && !Tokenizador::url_delimiters[c1]) ||
+            (c1 == '\0' && delimiters[':'])) {
+          *(writepoint - 1) = '\n';
+          continue;
+        }
+        while (readpoint < inbuf_end) {
+          c1 = *readpoint++;
+          if (delimiters[c1] && !Tokenizador::url_delimiters[c1])
+            break;
+          *writepoint++ = c1;
+        }
+        *writepoint++ = '\n';
+        continue;
+      }
+
+    delimiter_start_check:
+      if (delimiters[(c1 = *readpoint)]) {
+        // skip_delimiters:
+        while (readpoint < inbuf_end) {
+          c1 = *readpoint++;
+          if (dot_or_comma(c1)) {
+            if (!(readpoint < inbuf_end))
+              break;
+            c2 = *readpoint++;
+            if (is_numeric(c2)) {
+              tkinit_buf_checkpoint = writepoint;
+              goto decimal_with_delimiter_start;
+            }
+            if (delimiters[c2]) {
+              --readpoint;
+              continue;
+            }
+            // If c2 is not a delimiter, we start with c1 not being
+            c1 = c2;
+            goto no_delimiter_start;
+          }
+          if (!delimiters[c1])
+            goto no_delimiter_start;
+        }
         continue;
 
-    if(entry->d_type == DT_DIR)
-    {
-      tkDirAppend(entry_name, tokens);
-    }
-    else
-    {
-      tkAppend(entry_name, tokens);
-    }
-  }
-  return true;
-}
+      decimal_with_delimiter_start:
+        *writepoint++ = '0';
+        *writepoint++ = c1;
+        *writepoint++ = c2;
 
+      decimal_number:
+        buf_checkpoint = nullptr;
+        while (readpoint < inbuf_end) {
+          c1 = *readpoint++;
+          if (is_numeric(c1)) {
+            *writepoint++ = c1;
+          } else if (dot_or_comma(c1)) {
+            if (c1 == ',') {
+              buf_checkpoint = writepoint;
+            }
+            if (!(readpoint < inbuf_end))
+              break;
+            c2 = *readpoint;
+            if (dot_or_comma(c2)) {
+              *writepoint++ = '\n';
+              goto delimiter_start_check;
+            }
+            ++readpoint;
+            if (delimiters[c2])
+              break;
+            *writepoint++ = c1;
+            *writepoint++ = c2;
+            // If slice starts non numeric
+            if (!is_numeric(c2)) {
+              // Remove initial "0." if exists
+              if (tkinit_buf_checkpoint) {
+                writepoint -= 2;
+                while (tkinit_buf_checkpoint < writepoint) {
+                  *tkinit_buf_checkpoint = *(tkinit_buf_checkpoint + 2);
+                  ++tkinit_buf_checkpoint;
+                }
+              }
+              goto _acronym_nodelim_start;
+            }
+          } else if (delimiters[c1]) {
+            break;
+          } else /* c1 no delimiter */
+            goto cleanup_acronym;
+        }
+        *writepoint++ = '\n';
+        continue;
 
-pair<const char*, const char*> Tokenizador::extractCommonCaseToken()
-{
-  skipDelimiters(false);
-  loader.readpoint = loader.frontpoint;
-  if(loader.frontpoint >= loader.inbuf_end)
-  {
-    return {nullptr, nullptr};
-  }
-  while(loader.frontpoint < loader.inbuf_end && !delimiters.check(*loader.frontpoint))
-  {
-    ++loader.frontpoint;
-  }
+      cleanup_acronym:
+        if (buf_checkpoint)
+          *buf_checkpoint = '\n';
+        *writepoint++ = c1;
+        goto _acronym_nodelim_start;
+      } else
+        ++readpoint;
 
-  return {loader.readpoint, loader.frontpoint};
-}
+    no_delimiter_start:
+      *writepoint++ = c1;
+      if (is_numeric(c1) && delimiters['.'] && delimiters[',']) {
+        tkinit_buf_checkpoint = nullptr;
+        goto decimal_number;
+      }
+      while (readpoint < inbuf_end) {
+        c1 = *readpoint++;
+        if (delimiters[c1]) {
+          if (c1 == '@')
+            goto email;
+          if (c1 == '.')
+            goto acronym;
+          if (c1 == '-')
+            goto multiword;
+          break;
+        }
+        *writepoint++ = c1;
+      }
+      *writepoint++ = '\n';
+      continue;
 
+    email:
+      buf_checkpoint = writepoint;
+      if (!(readpoint < inbuf_end))
+        break;
+      c2 = *readpoint++;
+      if (delimiters[c2] || email_delimiters[c2]) {
+        *writepoint++ = '\n';
+        continue;
+      }
+      *writepoint++ = c1;
+      *writepoint++ = c2;
+      emaildelim_after_check = false;
+      while (readpoint < inbuf_end) {
+        c1 = *readpoint++;
+        if (email_delimiters[c1]) {
+          if (delimiters[c1] && (c1 == '.' || c1 == '-'))
+            emaildelim_after_check = true;
+          if (!(readpoint < inbuf_end))
+            break;
+          c2 = *readpoint++;
+          if (delimiters[c2] || email_delimiters[c2])
+            break;
+          *writepoint++ = c1;
+          *writepoint++ = c2;
+          continue;
+        } else if (c1 == '@') {
+          *buf_checkpoint = '\n';
+          if ((readpoint - 1) != buf_checkpoint) {
+            if (emaildelim_after_check)
+              break;
 
-pair<const char*, const char*> Tokenizador::extractSpecialCaseToken()
-{
-  skipDelimiters(true);
-  loader.readpoint = loader.frontpoint;
+            *writepoint++ = c1;
+            continue;
+          }
+          break;
+        } else if (delimiters[c1]) {
+          break;
+        }
+        *writepoint++ = c1;
+      }
+      *writepoint++ = '\n';
+      continue;
 
-  loader.frontpoint = decimalTill();
-  if(loader.frontpoint)
-  {
-    if((*loader.readpoint == ',' || *loader.readpoint == '.') && loader.writepoint)
-    {
-      loader.put(0);
-      ++loader.writepoint;
-    }
-    return {loader.readpoint, loader.frontpoint};
-  }
+    acronym:
+      if (!(readpoint < inbuf_end))
+        break;
+      c2 = *readpoint++;
+      if (delimiters[c2]) {
+        *writepoint++ = '\n';
+        continue;
+      }
+      *writepoint++ = c1;
+      *writepoint++ = c2;
+    _acronym_nodelim_start:
+      while (readpoint < inbuf_end) {
+        c1 = *readpoint++;
+        if (c1 == '.') {
+          if (!(readpoint < inbuf_end))
+            break;
+          c2 = *readpoint++;
+          if (delimiters[c2])
+            break;
+          *writepoint++ = c1;
+          *writepoint++ = c2;
+          continue;
+        } else if (delimiters[c1])
+          break;
 
-  if(delimiters.check(*loader.readpoint))
-    ++loader.readpoint; // Pass delimiter
+        *writepoint++ = c1;
+      }
+      *writepoint++ = '\n';
+      continue;
 
-  loader.frontpoint = multiwordTill();
-  if(!loader.frontpoint)
-    loader.frontpoint = urlTill();
-  if(!loader.frontpoint)
-    loader.frontpoint = emailTill();
-  if(!loader.frontpoint)
-    loader.frontpoint = acronymTill();
-  if(!loader.frontpoint)
-    return extractCommonCaseToken();
+    multiword:
+      if (!(readpoint < inbuf_end))
+        break;
+      c2 = *readpoint++;
+      if (delimiters[c2]) {
+        *writepoint++ = '\n';
+        continue;
+      }
+      *writepoint++ = c1;
+      *writepoint++ = c2;
+      while (readpoint < inbuf_end) {
+        c1 = *readpoint++;
+        if (c1 == '-') {
+          if (!(readpoint < inbuf_end))
+            break;
+          c2 = *readpoint++;
+          if (delimiters[c2])
+            break;
+          *writepoint++ = c1;
+          *writepoint++ = c2;
+          continue;
+        } else if (delimiters[c1])
+          break;
 
-  return {loader.readpoint, loader.frontpoint};
-}
-
-
-const char* Tokenizador::multiwordTill()
-{
-  const char* reader = loader.readpoint;
-  if(!delimiters.check('-') || delimiters.check(*reader))
-    return nullptr;
-
-  while(reader < loader.inbuf_end && !delimiters.check(*reader))
-    ++reader;
-  if(reader == loader.inbuf_end || *reader != '-' || reader +1 == loader.inbuf_end || delimiters.check(*(reader +1)))
-    return nullptr;
-
-  reader += 2;
-  while(reader < loader.inbuf_end)
-  {
-    // hyphen allowed
-    while(reader < loader.inbuf_end && !delimiters.check(*reader))
-      ++reader;
-
-    // no hyphen means end delimiter
-    if(reader == loader.inbuf_end || *reader != '-' || reader +1 == loader.inbuf_end || delimiters.check(*(reader +1)))
-      return reader;
-    ++reader;
-  }
-  
-  return reader;
-}
-
-
-//TODO: make url_delim constexpr
-const char* Tokenizador::urlTill()
-{
-  const char* reader = loader.readpoint; // Not frontpoint because can be null
-  iso_8859_1_bitvec url_delim;
-  url_delim.reset();
-  url_delim.copy_from("_:/.?&-=#@");
-
-  if(
-    reader +4 >= loader.inbuf_end 
-    || (!url_delim.check(*(reader +4)) && delimiters.check(*(reader +4)))
-    || !(
-      ((*reader) == 'f' 
-       && (*(reader +1)) == 't' 
-       && (*(reader +2)) == 'p' 
-       && *(reader +3) == ':')
-      || ((*reader) == 'h' 
-        && (*(reader +1)) == 't' 
-        && (*(reader +2)) == 't' 
-        && (*(reader +3)) == 'p'
-        && (*(reader +4) == ':'
-          || (*(reader +4) == 's' && reader +5 < loader.inbuf_end && *(reader +5) == ':')))))
-  {
-    return nullptr;
-  }
-  else reader += 4;
-
-  // The reader must point to ':'
-  if(*(reader -1) == ':') --reader;
-  else if((*reader) == 's') ++reader;
-
-  if(reader +1 >= loader.inbuf_end || (delimiters.check(*(reader +1)) && !url_delim.check(*(reader +1))))
-    return nullptr;
-  while(reader < loader.inbuf_end)
-  {
-    if(delimiters.check(*reader) && !url_delim.check(*reader))
-      return reader;
-    ++reader;
-  }
-
-  return reader;
-}
-
-
-const char* Tokenizador::emailTill()
-{
-  if(!delimiters.check('@') || *loader.readpoint == '@')
-    return nullptr;
-
-  const char* reader = loader.readpoint;
-  bool found_at_sign = false;
-
-  while(reader < loader.inbuf_end && !found_at_sign)
-  {
-    if(*reader == '@')
-    {
-      found_at_sign = true;
-      ++reader;
+        *writepoint++ = c1;
+      }
+      *writepoint++ = '\n';
       continue;
     }
-    if(delimiters.check(*reader))
-      return nullptr;
-
-    ++reader;
-  }
-  if(!found_at_sign)
-    return nullptr;
-
-  iso_8859_1_bitvec sufix_delimiters; //TODO: make constexpr when possible
-  sufix_delimiters.reset();
-  sufix_delimiters.copy_from(".-_");
-  while(reader < loader.inbuf_end)
+  } else // no special
   {
-    if(*reader == '@')
-      return nullptr; // Not allowed second @
-    if(sufix_delimiters.check(*reader)) 
-    {
-      if(delimiters.check(*(reader -1)) || reader +1 == loader.inbuf_end || delimiters.check(*(reader +1)))
-        return nullptr;
+    bool got_char = false;
+    while (readpoint < inbuf_end) {
+      if (delimiters[*readpoint]) {
+        ++readpoint;
+        if (got_char) {
+          got_char = false;
+          *writepoint++ = '\n';
+        }
+        continue;
+      }
+      got_char = true;
+      *writepoint++ = *readpoint++;
     }
-    else if(delimiters.check(*reader))
-      return reader;
-
-    ++reader;
+    if (!got_char)
+      *writepoint++ = '\n';
   }
-  return reader;
+
+  if (pasarAminuscSinAcentos) {
+    delete[] tmp_buf;
+  }
+  return writepoint - outbuf_begin; // written bytes
 }
 
+bool Tokenizador::special_delimiters_done = false;
 
-const char* Tokenizador::acronymTill()
-{
-  if(!delimiters.check('.'))
-    return nullptr;
+void Tokenizador::initialize_special_delimiters() {
+  static const unsigned char raw_url_delim[] = "_:/.?&-=#@";
+  static const unsigned char raw_email_delim[] = ".-_";
+  size_t N = sizeof(raw_url_delim) - 1;
 
-  const char* reader = loader.readpoint;
-  while(reader < loader.inbuf_end)
-  {
-    if(
-        *reader == '.' && (reader +1 == loader.inbuf_end || delimiters.check(*(reader +1)))
-        || *reader != '.' && delimiters.check(*reader))
-    {
-      return reader;
-    }
-    ++reader;
-  }
-  return reader;
-}
+  for (size_t i = 0; i < N; ++i)
+    Tokenizador::url_delimiters.set(raw_url_delim[i]);
 
-const char* Tokenizador::decimalTill()
-{
-  if(!(delimiters.check('.') && delimiters.check(',')))
-    return nullptr;
-  const char* reader = loader.readpoint;
-  const char *dot = nullptr, *comma = nullptr;
+  N = sizeof(raw_email_delim) - 1;
+  for (size_t i = 0; i < N; ++i)
+    Tokenizador::email_delimiters.set(raw_email_delim[i]);
 
-  if(*reader == '.')
-  {
-    dot = reader;
-    ++reader;
-  }
-  else if(*reader == ',')
-  {
-    comma = reader;
-    ++reader;
-  }
-
-  if(!isNumeric(*reader))
-    return nullptr;
-  else ++reader;
-
-  // Guaranteed at least one numeric char
-  while(reader < loader.inbuf_end)
-  {
-    if(*reader == '.')
-    {
-      dot = reader;
-      if(comma && dot && comma == dot -1) return comma;
-      if(reader +1 == loader.inbuf_end) return reader;
-    }
-    else if(*reader == ',')
-    {
-      comma = reader;
-      if(dot && comma && dot == comma -1) return dot;
-      if(reader +1 == loader.inbuf_end) return reader;
-    }
-    else if(delimiters.check(*reader))
-    {
-      if(comma == reader -1 || dot == reader -1) // Cut the separator if useless
-        --reader;
-      return reader;
-    }
-    else if(!isNumeric(*reader))
-    {
-      return nullptr;
-    }
-    ++reader;
-  }
-  return reader;
-}
-
-
-void Tokenizador::constructionLogic()
-{
-  defaultDelimiters();
-  
-  if(casosEspeciales)
-    extractToken = &Tokenizador::extractSpecialCaseToken;
-  else
-    extractToken = &Tokenizador::extractCommonCaseToken;
-}
-
-
-void Tokenizador::defaultDelimiters()
-{
-  delimiters.reset();
-  delimiters.set('\0', true);
-  delimiters.set('\n', true);
-  specialDelimiters();
-}
-
-
-void Tokenizador::specialDelimiters()
-{
-  if(casosEspeciales)
-    delimiters.set(0x20 /*empty space*/, true);
-  else
-    delimiters.set(0x20, false);
+  special_delimiters_done = true;
 }
