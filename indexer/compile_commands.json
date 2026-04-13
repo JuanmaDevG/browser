@@ -1,0 +1,19 @@
+[
+  {
+    "arguments": [
+      "/usr/bin/g++",
+      "-Wall",
+      "-Werror",
+      "-g",
+      "-std=c++11",
+      "-c",
+      "-Iinclude",
+      "-o",
+      "lib/indexadorHash.o",
+      "lib/indexadorHash.cpp"
+    ],
+    "directory": "/home/juan/Dev/public/browser/indexer",
+    "file": "/home/juan/Dev/public/browser/indexer/lib/indexadorHash.cpp",
+    "output": "/home/juan/Dev/public/browser/indexer/lib/indexadorHash.o"
+  }
+]

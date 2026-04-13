@@ -1,7 +1,7 @@
-.PHONY= clean
+.PHONY: clean
 
 CC=g++
-OPTIONS= -Wall -Werror -g
+OPTIONS= -Wall -Werror -g -std=c++11
 DEBUG= #-D DEBUG
 LIBDIR=lib
 INCLUDEDIR=include
