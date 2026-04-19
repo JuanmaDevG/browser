@@ -32,36 +32,9 @@ public:
                 const bool detectComp, const bool minuscSinAcentos,
                 const string &dirIndice, const int tStemmer,
                 const bool almPosTerm);
-  // "fichStopWords" será el nombre del archivo que contendrá todas las palabras
-  // de parada (una palabra por cada línea del fichero) y se almacenará en el
-  // campo privado "ficheroStopWords". Asimismo, almacenará todas las palabras
-  // de parada que contenga el archivo en el campo privado "stopWords", el
-  // índice de palabras de parada. "delimitadores" será el string que contiene
-  // todos los delimitadores utilizados por el tokenizador (campo privado "tok")
-  // detectComp y minuscSinAcentos serán los parámetros que se pasarán al
-  // tokenizador "dirIndice" será el directorio del disco duro donde se
-  // almacenará el índice (campo privado "directorioIndice"). Si dirIndice=""
-  // entonces se almacenará en el directorio donde se ejecute el programa
-  // "tStemmer" inicializará la variable privada "tipoStemmer":
-  // 0 = no se aplica stemmer: se indexa el término tal y como aparece
-  // tokenizado 1 = stemmer de Porter para español 2 = stemmer de Porter para
-  // inglés "almPosTerm" inicializará la variable privada "almacenarPosTerm" Los
-  // índices (p.ej. índice, indiceDocs e informacionColeccionDocs) quedarán
-  // vacíos
-
   IndexadorHash(const string &directorioIndexacion);
-  // Constructor para inicializar IndexadorHash a partir de una indexación
-  // previamente realizada que habrá sido almacenada en "directorioIndexacion"
-  // mediante el método "bool GuardarIndexacion()". Con ello toda la parte
-  // privada se inicializará convenientemente, igual que si se acabase de
-  // indexar la colección de documentos. En caso que no exista el directorio o
-  // que no contenga los datos de la indexación se tratará la excepción
-  // correspondiente
-
   IndexadorHash(const IndexadorHash &);
-
   ~IndexadorHash();
-
   IndexadorHash &operator=(const IndexadorHash &);
 
   bool Indexar(const string &ficheroDocumentos);
@@ -152,8 +125,7 @@ public:
   // sea palabra de parada, o sea, que haya algún término indexado en
   // indicePregunta), devolviéndo "pregunta" en "preg"
 
-  bool DevuelvePregunta(const string &word,
-                        InformacionTerminoPregunta &inf) const;
+  bool DevuelvePregunta(const string &word, InformacionTerminoPregunta &inf);
   // Devuelve true si word (aplicándole el tratamiento de stemming y mayúsculas
   // correspondiente) está indexado en la pregunta, devolviendo su información
   // almacenada "inf". En caso que no esté, devolvería "inf" vacío
@@ -177,19 +149,18 @@ public:
     cout << "Informacion de la pregunta: " << infPregunta << endl;
   }
 
-  bool Devuelve(const string &word, InformacionTermino &inf) const;
+  bool Devuelve(const string &word, InformacionTermino &inf);
   // Devuelve true si word (aplicándole el tratamiento de stemming y mayúsculas
   // correspondiente) está indexado, devolviendo su información almacenada
   // "inf". En caso que no esté, devolvería "inf" vacío
 
-  bool Devuelve(const string &word, const string &nomDoc,
-                InfTermDoc &InfDoc) const;
+  bool Devuelve(const string &word, const string &nomDoc, InfTermDoc &InfDoc);
   // Devuelve true si word (aplicándole el tratamiento de stemming y mayúsculas
   // correspondiente) está indexado y aparece en el documento de nombre nomDoc,
   // en cuyo caso devuelve la información almacenada para word en el documento.
   // En caso que no esté, devolvería "InfDoc" vacío
 
-  bool Existe(const string &word) const;
+  bool Existe(const string &word);
   // Devuelve true si word (aplicándole el tratamiento de stemming y mayúsculas
   // correspondiente) aparece como término indexado
 

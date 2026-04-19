@@ -33,15 +33,33 @@ static long get_size(const char *path) {
 
 } // namespace file_utils
 
-// ---------------------------------------------------------------------------
-
 const char *IndexadorHash::indexDefaultFilename = "index.idx";
+
+IndexadorHash &IndexadorHash::operator=(const IndexadorHash &idx) {
+  if (this == &idx)
+    return *this;
+  indice = idx.indice;
+  indiceDocs = idx.indiceDocs;
+  informacionColeccionDocs = idx.informacionColeccionDocs;
+  pregunta = idx.pregunta;
+  indicePregunta = idx.indicePregunta;
+  infPregunta = idx.infPregunta;
+  stopWords = idx.stopWords;
+  ficheroStopWords = idx.ficheroStopWords;
+  tok = idx.tok;
+  directorioIndice = idx.directorioIndice;
+  tipoStemmer = idx.tipoStemmer;
+  stemmer = idx.stemmer;
+  almacenarPosTerm = idx.almacenarPosTerm;
+  nextId = idx.nextId;
+  return *this;
+}
 
 IndexadorHash::IndexadorHash()
     : indice(), indiceDocs(), informacionColeccionDocs(), pregunta(""),
       indicePregunta(), infPregunta(), stopWords(),
       ficheroStopWords(indexDefaultFilename), tok(), directorioIndice(),
-      stemmer(), tipoStemmer(0), almacenarPosTerm(false), nextId(1) {}
+      tipoStemmer(0), stemmer(), almacenarPosTerm(false), nextId(1) {}
 
 IndexadorHash::IndexadorHash(const string &fichStopWords,
                              const string &delimitadores, const bool detectComp,
@@ -72,19 +90,15 @@ IndexadorHash::IndexadorHash(const string &fichStopWords,
       continue;
 
     string token(line, len);
-    // BUG 2: el original usaba "tipostemmer" (nombre incorrecto)
-    stemmer.stemmer(token, tipoStemmer);
     stopWords.insert(token);
   }
   fclose(fp);
 }
 
 IndexadorHash::IndexadorHash(const string &dirIndice)
-    // BUG 3: el original no inicializaba los miembros antes de llamar a
-    // RecuperarIndexacion; se inicializan aquí por seguridad.
     : indice(), indiceDocs(), informacionColeccionDocs(), pregunta(""),
       indicePregunta(), infPregunta(), stopWords(), ficheroStopWords(""), tok(),
-      directorioIndice(dirIndice), stemmer(), tipoStemmer(0),
+      directorioIndice(dirIndice), tipoStemmer(0), stemmer(),
       almacenarPosTerm(false), nextId(1) {
   RecuperarIndexacion(dirIndice);
 }
@@ -101,31 +115,10 @@ IndexadorHash::IndexadorHash(const IndexadorHash &idx)
 
 IndexadorHash::~IndexadorHash() {}
 
-IndexadorHash &IndexadorHash::operator=(const IndexadorHash &idx) {
-  if (this == &idx)
-    return *this;
-  indice = idx.indice;
-  indiceDocs = idx.indiceDocs;
-  informacionColeccionDocs = idx.informacionColeccionDocs;
-  pregunta = idx.pregunta;
-  indicePregunta = idx.indicePregunta;
-  infPregunta = idx.infPregunta;
-  stopWords = idx.stopWords;
-  ficheroStopWords = idx.ficheroStopWords;
-  tok = idx.tok;
-  directorioIndice = idx.directorioIndice;
-  tipoStemmer = idx.tipoStemmer;
-  stemmer = idx.stemmer;
-  almacenarPosTerm = idx.almacenarPosTerm;
-  nextId = idx.nextId;
-  return *this;
-}
-
 void IndexadorHash::IndexarDoc(const string &doc_filename,
                                vector<string> &tokens) {
   tokens.clear();
 
-  // BUG 6: el original usaba file_loader::exists que no está definido.
   if (!file_utils::exists(doc_filename.c_str()))
     return;
 
@@ -134,9 +127,6 @@ void IndexadorHash::IndexarDoc(const string &doc_filename,
     cerr << "WARNING: el documento " << doc_filename
          << " ya estaba indexado.\n";
 
-    // BUG 7: el original usaba file_loader::get_mod_date devolviendo Fecha
-    // (struct tm *) y difftime(mktime(...)) — pero InfDoc::fechaModificacion
-    // es time_t. Se trabaja directamente con time_t.
     time_t mod_time = file_utils::get_mod_time(doc_filename.c_str());
     if (!(difftime(mod_time, infDoc.fechaModificacion) > 0))
       return;
@@ -157,8 +147,6 @@ void IndexadorHash::IndexarDoc(const string &doc_filename,
       if (itd_iter != it.l_docs.end()) {
         it.ftc -= itd_iter->second.ft;
         it.l_docs.erase(itd_iter);
-        // BUG 8: el original creaba una unordered_map sin uso alguno aquí.
-        // Eliminado.
       }
     }
   } else { // Documento nuevo
@@ -167,15 +155,7 @@ void IndexadorHash::IndexarDoc(const string &doc_filename,
     ++informacionColeccionDocs.numDocs;
   }
 
-  // BUG 9: el original llamaba a tok.tkAppend que no existe en el Tokenizador.
-  // La tokenización se hace mediante Tokenizar(string, list<string>) y luego
-  // se pasa a vector.
   list<string> token_list;
-  tok.Tokenizar(doc_filename, token_list);
-  // Nota: Tokenizar abre el fichero internamente (versión de dos args escribe
-  // a .tk). Usamos la versión en memoria leyendo el fichero nosotros.
-  // Como el tokenizador sólo expone Tokenizar(string str, list<string>&)
-  // para tokenizar texto en memoria, leemos el fichero manualmente.
   {
     FILE *fp = fopen(doc_filename.c_str(), "rb");
     if (!fp)
@@ -191,7 +171,8 @@ void IndexadorHash::IndexarDoc(const string &doc_filename,
   }
 
   for (auto &t : token_list)
-    tokens.push_back(t);
+    if (!t.empty())
+      tokens.push_back(t);
 
   infDoc.fechaModificacion = file_utils::get_mod_time(doc_filename.c_str());
   infDoc.numPal = (int)tokens.size();
@@ -220,7 +201,6 @@ void IndexadorHash::IndexarDoc(const string &doc_filename,
 }
 
 bool IndexadorHash::Indexar(const string &ficheroDocumentos) {
-  // BUG 10: el original usaba file_loader que no está definido.
   FILE *fp = fopen(ficheroDocumentos.c_str(), "r");
   if (!fp) {
     cerr << "ERROR: el fichero de documentos " << ficheroDocumentos
@@ -521,9 +501,6 @@ err:
   return false;
 }
 
-// ---------------------------------------------------------------------------
-// IndexarPregunta
-// ---------------------------------------------------------------------------
 bool IndexadorHash::IndexarPregunta(const string &preg) {
   indicePregunta.clear();
   infPregunta = InformacionPregunta();
@@ -531,6 +508,7 @@ bool IndexadorHash::IndexarPregunta(const string &preg) {
 
   list<string> token_list;
   tok.Tokenizar(preg, token_list);
+  token_list.remove_if([](const string &s) { return s.empty(); });
 
   if (token_list.empty()) {
     cerr << "ERROR: la pregunta no contiene ningún término." << endl;
@@ -568,9 +546,6 @@ bool IndexadorHash::IndexarPregunta(const string &preg) {
   return true;
 }
 
-// ---------------------------------------------------------------------------
-// DevuelvePregunta  (3 sobrecargas)
-// ---------------------------------------------------------------------------
 bool IndexadorHash::DevuelvePregunta(string &preg) const {
   if (indicePregunta.empty())
     return false;
@@ -579,9 +554,11 @@ bool IndexadorHash::DevuelvePregunta(string &preg) const {
 }
 
 bool IndexadorHash::DevuelvePregunta(const string &word,
-                                     InformacionTerminoPregunta &inf) const {
-  string term = word;
-  stemmer.stemmer(term, tipoStemmer);
+                                     InformacionTerminoPregunta &inf) {
+  list<string> tmp;
+  tok.Tokenizar(word, tmp);
+  tmp.remove_if([](const string &s) { return s.empty(); });
+  string term = tmp.empty() ? word : tmp.front();
   auto it = indicePregunta.find(term);
   if (it == indicePregunta.end()) {
     inf = InformacionTerminoPregunta();
@@ -600,13 +577,11 @@ bool IndexadorHash::DevuelvePregunta(InformacionPregunta &inf) const {
   return true;
 }
 
-// ---------------------------------------------------------------------------
-// Devuelve  (2 sobrecargas)
-// ---------------------------------------------------------------------------
-bool IndexadorHash::Devuelve(const string &word,
-                             InformacionTermino &inf) const {
-  string term = word;
-  stemmer.stemmer(term, tipoStemmer);
+bool IndexadorHash::Devuelve(const string &word, InformacionTermino &inf) {
+  list<string> tmp;
+  tok.Tokenizar(word, tmp);
+  tmp.remove_if([](const string &s) { return s.empty(); });
+  string term = tmp.empty() ? word : tmp.front();
   auto it = indice.find(term);
   if (it == indice.end()) {
     inf = InformacionTermino();
@@ -617,9 +592,11 @@ bool IndexadorHash::Devuelve(const string &word,
 }
 
 bool IndexadorHash::Devuelve(const string &word, const string &nomDoc,
-                             InfTermDoc &infDoc) const {
-  string term = word;
-  stemmer.stemmer(term, tipoStemmer);
+                             InfTermDoc &infDoc) {
+  list<string> tmp;
+  tok.Tokenizar(word, tmp);
+  tmp.remove_if([](const string &s) { return s.empty(); });
+  string term = tmp.empty() ? word : tmp.front();
   auto it = indice.find(term);
   if (it == indice.end()) {
     infDoc = InfTermDoc();
@@ -639,18 +616,14 @@ bool IndexadorHash::Devuelve(const string &word, const string &nomDoc,
   return true;
 }
 
-// ---------------------------------------------------------------------------
-// Existe
-// ---------------------------------------------------------------------------
-bool IndexadorHash::Existe(const string &word) const {
-  string term = word;
-  stemmer.stemmer(term, tipoStemmer);
+bool IndexadorHash::Existe(const string &word) {
+  list<string> tmp;
+  tok.Tokenizar(word, tmp);
+  tmp.remove_if([](const string &s) { return s.empty(); });
+  string term = tmp.empty() ? word : tmp.front();
   return indice.find(term) != indice.end();
 }
 
-// ---------------------------------------------------------------------------
-// BorraDoc
-// ---------------------------------------------------------------------------
 bool IndexadorHash::BorraDoc(const string &nomDoc) {
   auto dit = indiceDocs.find(nomDoc);
   if (dit == indiceDocs.end())
@@ -658,7 +631,6 @@ bool IndexadorHash::BorraDoc(const string &nomDoc) {
 
   InfDoc &infDoc = dit->second;
 
-  // Restar contadores globales
   informacionColeccionDocs.numTotalPal -= infDoc.numPal;
   informacionColeccionDocs.numTotalPalSinParada -= infDoc.numPalSinParada;
   informacionColeccionDocs.tamBytes -= infDoc.tamBytes;
@@ -674,14 +646,19 @@ bool IndexadorHash::BorraDoc(const string &nomDoc) {
     }
   }
 
+  // Corregir términos huerfanos que no tienen lista de docs
+  for (auto i = indice.begin(); i != indice.end();) {
+    if (i->second.l_docs.empty())
+      i = indice.erase(i);
+    else
+      ++i;
+  }
+
   indiceDocs.erase(dit);
   informacionColeccionDocs.numTotalPalDiferentes = (int)indice.size();
   return true;
 }
 
-// ---------------------------------------------------------------------------
-// VaciarIndiceDocs
-// ---------------------------------------------------------------------------
 void IndexadorHash::VaciarIndiceDocs() {
   indice.clear();
   indiceDocs.clear();
@@ -689,18 +666,12 @@ void IndexadorHash::VaciarIndiceDocs() {
   nextId = 1;
 }
 
-// ---------------------------------------------------------------------------
-// VaciarIndicePreg
-// ---------------------------------------------------------------------------
 void IndexadorHash::VaciarIndicePreg() {
   indicePregunta.clear();
   infPregunta = InformacionPregunta();
   pregunta = "";
 }
 
-// ---------------------------------------------------------------------------
-// Getters simples
-// ---------------------------------------------------------------------------
 int IndexadorHash::NumPalIndexadas() const { return (int)indice.size(); }
 
 string IndexadorHash::DevolverFichPalParada() const { return ficheroStopWords; }
@@ -732,9 +703,6 @@ string IndexadorHash::DevolverDirIndice() const { return directorioIndice; }
 
 int IndexadorHash::DevolverTipoStemming() const { return tipoStemmer; }
 
-// ---------------------------------------------------------------------------
-// Listar*
-// ---------------------------------------------------------------------------
 void IndexadorHash::ListarInfColeccDocs() const {
   cout << informacionColeccionDocs << endl;
 }

@@ -20,24 +20,30 @@ InfTermDoc::~InfTermDoc() {
   posTerm.clear();
 }
 
+InfTermDoc &InfTermDoc::operator=(const InfTermDoc &itd) {
+  ft = itd.ft;
+  posTerm = itd.posTerm;
+  return *this;
+}
+
 InformacionTermino &
 InformacionTermino::operator=(const InformacionTermino &itd) {
   ftc = itd.ftc;
-  l_docs.clear();
+  l_docs = itd.l_docs;
   return *this;
 }
 
 InfDoc::InfDoc(const int idDoc)
-    : idDoc(idDoc), numPal(0), numPalSinParada(0), tamBytes(0),
-      fechaModificacion() {}
+    : idDoc(idDoc), numPal(0), numPalSinParada(0), numPalDiferentes(0),
+      tamBytes(0), fechaModificacion() {}
 
 InfDoc::InfDoc(const InfDoc &infd)
     : idDoc(infd.idDoc), numPal(infd.numPal),
-      numPalSinParada(infd.numPalSinParada), tamBytes(infd.tamBytes),
-      fechaModificacion() {}
+      numPalSinParada(infd.numPalSinParada), numPalDiferentes(0),
+      tamBytes(infd.tamBytes), fechaModificacion() {}
 
 InfDoc::InfDoc()
-    : idDoc(0), numPal(0), numPalSinParada(0), tamBytes(0),
+    : idDoc(0), numPal(0), numPalSinParada(0), numPalDiferentes(0), tamBytes(0),
       fechaModificacion(0) {}
 
 InfDoc::~InfDoc() {}
@@ -48,6 +54,7 @@ InfDoc &InfDoc::operator=(const InfDoc &infd) {
   numPalSinParada = infd.numPalSinParada;
   tamBytes = infd.tamBytes;
   fechaModificacion = infd.fechaModificacion;
+  numPalDiferentes = infd.numPalDiferentes;
   return *this;
 }
 

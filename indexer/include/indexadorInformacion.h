@@ -6,6 +6,7 @@
 
 using namespace std;
 
+// Boilerplate predefinitions
 class InfTermDoc;
 class IndexadorHash;
 
