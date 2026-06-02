@@ -3,6 +3,7 @@
 #include <dirent.h>
 #include <fcntl.h>
 #include <string.h>
+#include <sys/mman.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -10,6 +11,7 @@
 
 using namespace std;
 
+// TODO: remove this shit, use macros on repeated calls
 namespace file_utils {
 
 static bool exists(const char *path) {
@@ -57,9 +59,9 @@ IndexadorHash &IndexadorHash::operator=(const IndexadorHash &idx) {
 
 IndexadorHash::IndexadorHash()
     : indice(), indiceDocs(), informacionColeccionDocs(), pregunta(""),
-      indicePregunta(), infPregunta(), stopWords(),
-      ficheroStopWords(indexDefaultFilename), tok(), directorioIndice(),
-      tipoStemmer(0), stemmer(), almacenarPosTerm(false), nextId(1) {}
+      indicePregunta(), infPregunta(), stopWords(), ficheroStopWords(""), tok(),
+      directorioIndice(), tipoStemmer(0), stemmer(), almacenarPosTerm(false),
+      nextId(1) {}
 
 IndexadorHash::IndexadorHash(const string &fichStopWords,
                              const string &delimitadores, const bool detectComp,
@@ -72,27 +74,37 @@ IndexadorHash::IndexadorHash(const string &fichStopWords,
       directorioIndice(dirIndice), tipoStemmer(tStemmer), stemmer(),
       almacenarPosTerm(almPosTerm), nextId(1) {
 
-  FILE *fp = fopen(ficheroStopWords.c_str(), "r");
-  if (!fp) {
-    cerr << "ERROR: el fichero de stopwords " << ficheroStopWords
-         << " no existe" << endl;
-    this->ficheroStopWords = "";
+  int fd_stw = open(ficheroStopWords.c_str(), O_RDONLY);
+  if (fd_stw == -1) {
+    cerr << "ERROR: el fichero de stopwords no existe" << endl;
     return;
   }
+  struct stat file_info;
+  stat(ficheroStopWords.c_str(), &file_info);
+  unsigned char *const map_stw = (unsigned char *)mmap(
+      NULL, file_info.st_size, PROT_READ, MAP_SHARED, fd_stw, 0);
+  close(fd_stw);
 
-  char line[4096];
-  while (fgets(line, sizeof(line), fp)) {
-    size_t len = strlen(line);
-    // Quitar salto de línea
-    while (len > 0 && (line[len - 1] == '\n' || line[len - 1] == '\r'))
-      line[--len] = '\0';
-    if (len == 0)
-      continue;
-
-    string token(line, len);
-    stopWords.insert(token);
+  if (map_stw == MAP_FAILED) {
+    cerr << "ERROR: no hay suficiente memoria para mapear el fichero de "
+            "stopwords"
+         << endl;
+    return;
   }
-  fclose(fp);
+  madvise(map_stw, file_info.st_size, MADV_SEQUENTIAL | MADV_WILLNEED);
+  const unsigned char *const limit = map_stw + file_info.st_size;
+  const unsigned char *tk_init = map_stw;
+  for (const unsigned char *i = map_stw; i < limit; ++i) {
+    if (*i == '\n') {
+      if (i == tk_init) {
+        tk_init = i + 1;
+        i = tk_init;
+        continue;
+      }
+      stopWords.emplace(tk_init, i);
+    }
+  }
+  munmap(map_stw, file_info.st_size);
 }
 
 IndexadorHash::IndexadorHash(const string &dirIndice)
@@ -117,8 +129,23 @@ IndexadorHash::~IndexadorHash() {}
 
 void IndexadorHash::IndexarDoc(const string &doc_filename,
                                vector<string> &tokens) {
-  tokens.clear();
+  int fd_doc = open(doc_filename.c_str(), O_RDONLY);
+  if (fd_doc == -1) {
+    cerr << "ERROR: el documento a indexar " << doc_filename
+         << " no se ha podido abrir" << endl;
+    return;
+  }
+  struct stat file_info;
+  stat(doc_filename.c_str(), &file_info);
+  unsigned char *file_map = (unsigned char *)mmap(
+      NULL, file_info.st_size, PROT_READ, MAP_SHARED, fd_doc, 0);
+  if (file_map == MAP_FAILED) {
+    cout << "ERROR: el fichero a indexar " << doc_filename << " no existe"
+         << endl;
+    return;
+  }
 
+  tokens.clear();
   if (!file_utils::exists(doc_filename.c_str()))
     return;
 
