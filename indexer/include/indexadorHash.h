@@ -253,5 +253,7 @@ private:
   bool almacenarPosTerm;
   int nextId;
 
+  void indexDoc(const char *fname, const size_t fname_len);
+
   static const char *indexDefaultFilename;
 };

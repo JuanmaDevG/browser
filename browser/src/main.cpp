@@ -1,6 +1,9 @@
-#include <buscador.h>
+#include <iostream>
+#include <string>
+#include "buscador.h"
 
-int main()
-{
-  return 0;
+using namespace std;
+
+int main() {
+  //Buscador b("prueba", 1);
 }

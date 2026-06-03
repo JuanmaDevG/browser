@@ -80,7 +80,7 @@ IndexadorHash::IndexadorHash(const string &fichStopWords,
     return;
   }
   struct stat file_info;
-  stat(ficheroStopWords.c_str(), &file_info);
+  fstat(fd_stw, &file_info);
   unsigned char *const map_stw = (unsigned char *)mmap(
       NULL, file_info.st_size, PROT_READ, MAP_SHARED, fd_stw, 0);
   close(fd_stw);
@@ -96,12 +96,13 @@ IndexadorHash::IndexadorHash(const string &fichStopWords,
   const unsigned char *tk_init = map_stw;
   for (const unsigned char *i = map_stw; i < limit; ++i) {
     if (*i == '\n') {
-      if (i == tk_init) {
-        tk_init = i + 1;
-        i = tk_init;
-        continue;
-      }
+      if (i == tk_init)
+        goto next_word;
+
       stopWords.emplace(tk_init, i);
+    next_word:
+      tk_init = i + 1;
+      i = tk_init;
     }
   }
   munmap(map_stw, file_info.st_size);
@@ -129,26 +130,13 @@ IndexadorHash::~IndexadorHash() {}
 
 void IndexadorHash::IndexarDoc(const string &doc_filename,
                                vector<string> &tokens) {
-  int fd_doc = open(doc_filename.c_str(), O_RDONLY);
-  if (fd_doc == -1) {
-    cerr << "ERROR: el documento a indexar " << doc_filename
-         << " no se ha podido abrir" << endl;
-    return;
-  }
-  struct stat file_info;
-  stat(doc_filename.c_str(), &file_info);
-  unsigned char *file_map = (unsigned char *)mmap(
-      NULL, file_info.st_size, PROT_READ, MAP_SHARED, fd_doc, 0);
-  if (file_map == MAP_FAILED) {
-    cout << "ERROR: el fichero a indexar " << doc_filename << " no existe"
-         << endl;
-    return;
-  }
-
+  indexDoc(doc_filename.c_str(), doc_filename.length());
+  // TODO: loop that takes tokens
   tokens.clear();
-  if (!file_utils::exists(doc_filename.c_str()))
-    return;
+  // TODO: volver a tokenizar en un buffer para rellenar el vector
+  // (cambiar incluso la parte publica del tokenizador)
 
+  // ==================================================================
   InfDoc &infDoc = indiceDocs[doc_filename];
   if (infDoc.idDoc > 0) { // Ya estaba indexado
     cerr << "WARNING: el documento " << doc_filename
@@ -227,30 +215,38 @@ void IndexadorHash::IndexarDoc(const string &doc_filename,
   }
 }
 
+// TODO: fix this function's quirks
 bool IndexadorHash::Indexar(const string &ficheroDocumentos) {
-  FILE *fp = fopen(ficheroDocumentos.c_str(), "r");
-  if (!fp) {
+  int fd_docfile = open(ficheroDocumentos.c_str(), O_RDONLY);
+  if (fd_docfile == -1) {
     cerr << "ERROR: el fichero de documentos " << ficheroDocumentos
          << " no existe" << endl;
     return false;
   }
-
-  vector<string> tokens;
-  char line[4096];
-  while (fgets(line, sizeof(line), fp)) {
-    size_t len = strlen(line);
-    while (len > 0 && (line[len - 1] == '\n' || line[len - 1] == '\r'))
-      line[--len] = '\0';
-    if (len == 0)
-      continue;
-
-    string doc_filename(line, len);
-    IndexarDoc(doc_filename, tokens);
+  struct stat file_info;
+  fstat(fd_docfile, &file_info);
+  unsigned char *docfile_map = (unsigned char *)mmap(
+      NULL, file_info.st_size, PROT_READ, MAP_SHARED, fd_docfile, 0);
+  if (docfile_map == MAP_FAILED) {
+    cerr << "ERROR: no hay memoria para mapear el fichero " << ficheroDocumentos
+         << endl;
+    return false;
   }
 
-  informacionColeccionDocs.numTotalPalDiferentes = (int)indice.size();
-  cerr << flush;
-  fclose(fp);
+  // TODO: modify to avoid using IndexarDoc and so remove vec
+  vector<string> tokens;
+  const unsigned char *fname_ini = docfile_map;
+  const unsigned char *const mbuf_end = docfile_map + file_info.st_size;
+  for (const unsigned char *i = docfile_map; i < mbuf_end; ++i) {
+    if (*i == '\n') {
+      if (fname_ini == i)
+        goto next_fname;
+      IndexarDoc({fname_ini, i}, tokens);
+    next_fname:
+      fname_ini = i + 1;
+      i = fname_ini;
+    }
+  }
   return true;
 }
 
@@ -764,4 +760,27 @@ bool IndexadorHash::ListarDocs(const string &nomDoc) const {
     return false;
   cout << dit->first << '\t' << dit->second << endl;
   return true;
+}
+
+void IndexadorHash::indexDoc(const char *fname, const size_t fname_len) {
+  int fd_doc = open(fname, O_RDONLY);
+  if (fd_doc == -1) {
+    cerr << "ERROR: el documento a indexar " << fname
+         << " no se ha podido abrir" << endl;
+    return;
+  }
+  struct stat file_info;
+  fstat(fd_doc, &file_info);
+  unsigned char *file_map = (unsigned char *)mmap(
+      NULL, file_info.st_size, PROT_READ, MAP_SHARED, fd_doc, 0);
+  if (file_map == MAP_FAILED) {
+    cerr << "ERROR: el fichero a indexar " << fname << " no existe" << endl;
+    return;
+  }
+  close(fd_doc);
+
+  // TODO: bring the indexation work here
+
+  munmap(file_map, file_info.st_size);
+  return;
 }

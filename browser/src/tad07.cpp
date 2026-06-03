@@ -6,7 +6,7 @@
 using namespace std;
 
 
-main() {
+int main() {
 IndexadorHash b("./StopWordsEspanyol.txt", ". ,:", false, false, "./indicePrueba", 0, false);
 
 b.Indexar("./listaFicheros_corto.txt");
